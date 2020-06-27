@@ -16,33 +16,6 @@
     "IsHide": "False"
   },
   {
-    "Author": "Haplo064",
-    "Name": "Chat Extender Plugin",
-    "Description": "This plugin adds functionality to FFXIV in-game chat.",
-    "InternalName": "ChatExtender",
-    "AssemblyVersion": "2.0.2.3",
-    "RepoUrl": "https://github.com/Haplo064/ffxiv-chat-extender/",
-    "ApplicableVersion": "any",
-    "Tags": [
-      "Chat",
-      "UI",
-      "Replacement",
-      "Extension",
-      "Tab",
-      "Bubble"
-    ],
-    "IsHide": "False"
-  },
-  {
-    "Author": "goat",
-    "Name": "Character Data Sync",
-    "Description": "This plugin allows you to use your character data from your main character on all others.",
-    "InternalName": "Dalamud.CharacterSync",
-    "AssemblyVersion": "1.3.0.0",
-    "ApplicableVersion": "any",
-    "IsHide": "False"
-  },
-  {
     "Author": "goat",
     "Name": "Discord Rich Presence",
     "Description": "This plugin allows you to set up chat triggers.",
@@ -110,31 +83,12 @@
     "IsHide": "False"
   },
   {
-    "Author": "karashiiro",
-    "Name": "NeatNoter",
-    "Description": "A note-taking plugin.",
-    "InternalName": "NeatNoter",
-    "AssemblyVersion": "1.0.0.0",
-    "RepoUrl": "https://github.com/karashiiro/NeatNoter",
-    "ApplicableVersion": "any",
-    "IsHide": "False"
-  },
-  {
     "Author": "meli",
     "Name": "Orchestrion Plugin",
     "Description": "Adds a simple front-end for browsing and changing the in-game BGM.  /porch to open",
     "InternalName": "orchestrion",
     "AssemblyVersion": "1.2.0.0",
     "RepoUrl": "https://github.com/ff-meli/OrchestrionPlugin/",
-    "ApplicableVersion": "any",
-    "IsHide": "False"
-  },
-  {
-    "Author": "goat",
-    "Name": "OwO",
-    "Description": "This plugin uwu's your chat.",
-    "InternalName": "owofy",
-    "AssemblyVersion": "1.0.0.0",
     "ApplicableVersion": "any",
     "IsHide": "False"
   },
@@ -192,9 +146,9 @@
   {
     "Author": "Pohky",
     "Name": "Teleporter",
-    "Description": "Chat Commands for teleporting to Aetherytes. /tp or /tpt for help",
+    "Description": "Chat Commands for teleporting to Aetherytes. /tp for help",
     "InternalName": "TeleporterPlugin",
-    "AssemblyVersion": "1.0.0.4",
+    "AssemblyVersion": "1.0.0.1",
     "RepoUrl": "https://github.com/pohky/TeleporterPlugin",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 1,
@@ -221,31 +175,5 @@
       "Combo"
     ],
     "IsHide": "False"
-  },
-  {
-    "Author": "Dark",
-    "Name": "Simple Counter",
-    "Description": "Simple counter with Mob-specific automation to increment a counter on kill (not instant)",
-    "InternalName": "XIVCounter",
-    "AssemblyVersion": "1.1.0.0",
-    "RepoUrl": "https://github.com/DarkView/XIVCounter",
-    "Tags": [
-      "counter",
-      "utility",
-      "tool",
-      "automation"
-    ],
-    "ApplicableVersion": "any",
-    "IsHide": "False"
-  },
-  {
-    "Author": "Emilia",
-    "Name": "XIVStats",
-    "Description": "Tracks statistics of each class you use, including playtime and commendations received",
-    "InternalName": "XIVStats",
-    "AssemblyVersion": "1.1.0.0",
-    "RepoUrl": "https://github.com/thetrueyoshifan/Dalamud.XIVStats",
-    "ApplicableVersion": "any",
-    "IsHide": "True"
   }
 ]
