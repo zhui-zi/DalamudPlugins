@@ -56,14 +56,13 @@
     "Name": "FPS Plugin",
     "Description": "Display game FPS. /pfps to open config",
     "InternalName": "FPSPlugin",
-    "AssemblyVersion": "1.3.0.2",
+    "AssemblyVersion": "1.3.0.1",
     "RepoUrl": "https://github.com/Caraxi/FPSPlugin",
     "ApplicableVersion": "any",
     "Tags": [
       "FPS",
       "Monitor"
     ],
-    "DalamudApiLevel": 1,
     "IsHide": "False"
   },
   {
@@ -144,7 +143,7 @@
     "Name": "PingPlugin",
     "Description": "A ping display plugin for Dalamud (Does not work with Mudfish FastConnect).",
     "InternalName": "PingPlugin",
-    "AssemblyVersion": "1.4.4.0",
+    "AssemblyVersion": "1.5.0.1",
     "RepoUrl": "https://github.com/karashiiro/PingPlugin",
     "Tags": [
       "ping",
@@ -153,6 +152,8 @@
       "tool"
     ],
     "ApplicableVersion": "any",
+    "DalamudApplicableVersion": ">=4.9.8.3",
+    "DalamudApiLevel": "2",
     "IsHide": "False"
   },
   {
@@ -160,7 +161,7 @@
     "Name": "Pixel Perfect Plugin",
     "Description": "Adds an indicator of your hitbox.",
     "InternalName": "PixelPerfect",
-    "AssemblyVersion": "1.0.0.0",
+    "AssemblyVersion": "1.1.0.0",
     "RepoUrl": "https://github.com/Haplo064/PixelPerfect",
     "ApplicableVersion": "any",
     "Tags": [
@@ -204,7 +205,7 @@
     "Name": "Title Edit",
     "Description": "This plugin allows for the title screen to be changed to any expac's title screen.",
     "InternalName": "TitleEdit",
-    "AssemblyVersion": "1.0.1.1",
+    "AssemblyVersion": "1.0.1.0",
     "ApplicableVersion": "any",
     "IsHide": "False"
   },
