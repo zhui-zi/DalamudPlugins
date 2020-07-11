@@ -20,7 +20,7 @@
     "Name": "Discord Rich Presence",
     "Description": "This plugin allows you to set up chat triggers.",
     "InternalName": "Dalamud.RichPresence",
-    "AssemblyVersion": "1.1.0.0",
+    "AssemblyVersion": "1.1.0.1",
     "ApplicableVersion": "any",
     "IsHide": "False"
   },
@@ -59,11 +59,25 @@
     "IsHide": "False"
   },
   {
+    "Author": "Cara",
+    "Name": "MacroRecursion",
+    "Description": "Execute macros from macros. /macro ## [shared]",
+    "InternalName": "MacroRecursion",
+    "AssemblyVersion": "1.0.0.0",
+    "RepoUrl": "https://github.com/Caraxi/MacroRecursion",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "Macro"
+    ],
+    "DalamudApiLevel": 1,
+    "IsHide": "False"
+  },
+  {
     "Author": "fmauNeko",
     "Name": "Market board",
     "Description": "Browse the market board. /pmb to open.",
     "InternalName": "MarketBoardPlugin",
-    "AssemblyVersion": "0.2.0.0",
+    "AssemblyVersion": "0.3.0.0",
     "RepoUrl": "https://github.com/fmauNeko/MarketBoardPlugin",
     "ApplicableVersion": "any",
     "IsHide": "False"
