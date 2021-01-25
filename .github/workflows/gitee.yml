@@ -2,10 +2,6 @@ name: Gitee mirror
 on:
   push:
     branches: ['cn']
-  workflow_run:
-    workflows: ["Regenerate PluginMaster"]
-    types: 
-      - completed
   schedule:
     - cron:  '0 1 * * *'
   workflow_dispatch:
