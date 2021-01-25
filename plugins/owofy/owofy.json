@@ -5,5 +5,5 @@
   "InternalName": "owofy",
   "AssemblyVersion": "1.1.0.0",
   "ApplicableVersion": "any",
-  "DalamudApiLevel": 1
+  "DalamudApiLevel": 2
 }
