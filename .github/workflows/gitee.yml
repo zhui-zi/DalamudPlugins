@@ -1,14 +1,12 @@
-name: Gitee repos mirror periodic job
+name: Gitee repos mirror
 on:
   workflow_dispatch:
-# on:
-#   workflow_dispatch:
-#   workflow_run:
-#     workflows: ["Regenerate PluginMaster"]
-#     types: 
-#       - completed
-#   schedule:
-#     - cron:  '0 1 * * *'
+  workflow_run:
+    workflows: ["Regenerate PluginMaster"]
+    types: 
+      - completed
+  schedule:
+    - cron:  '0 1 * * *'
 
 jobs:
   build:
