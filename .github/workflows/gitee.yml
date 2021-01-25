@@ -1,0 +1,22 @@
+name: Gitee repos mirror
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Regenerate PluginMaster"]
+    types: 
+      - completed
+  schedule:
+    - cron:  '0 1 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Mirror the Github organization repos to Gitee.
+      uses: Yikun/hub-mirror-action@master
+      with:
+        src: github/Bluefissure
+        dst: gitee/Bluefissure
+        dst_key: ${{ secrets.GITEE_PRIVATE_KEY }}
+        dst_token: ${{ secrets.GITEE_TOKEN }}
+        white_list: "DalamudPlugins"
