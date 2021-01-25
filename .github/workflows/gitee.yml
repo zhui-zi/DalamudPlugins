@@ -1,5 +1,7 @@
 name: Gitee mirror
 on:
+  push:
+    branches: ['cn']
   workflow_run:
     workflows: ["Regenerate PluginMaster"]
     types: 
