@@ -391,11 +391,11 @@
     "InternalName": "owofy",
     "AssemblyVersion": "1.1.0.0",
     "ApplicableVersion": "any",
-    "DalamudApiLevel": 1,
+    "DalamudApiLevel": 2,
     "IsHide": "False",
     "IsTestingExclusive": "False",
     "DownloadCount": 0,
-    "LastUpdate": "1596238734",
+    "LastUpdate": "1611534240",
     "DownloadLinkInstall": "https://gitee.com/bluefissure/DalamudPlugins/raw/cn/plugins/owofy/latest.zip",
     "DownloadLinkTesting": "https://gitee.com/bluefissure/DalamudPlugins/raw/cn/plugins/owofy/latest.zip",
     "DownloadLinkUpdate": "https://gitee.com/bluefissure/DalamudPlugins/raw/cn/plugins/owofy/latest.zip"
