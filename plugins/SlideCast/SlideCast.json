@@ -6,5 +6,6 @@
   "AssemblyVersion": "0.6.1.0",
   "RepoUrl":"https://github.com/Haplo064/SlideCast",
   "ApplicableVersion": "any",
+  "DalamudApiLevel": 2,
   "Tags": ["Castbar", "UI", "Overlay", "Extension", "Casting", "Slide"]
 }
