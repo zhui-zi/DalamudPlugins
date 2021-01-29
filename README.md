@@ -12,13 +12,9 @@ Contains the repository JSON file for my Dalamud Plugins for third party plugin 
 * Check the "Enabled" box for your new entry.
 * Click "Save and Close" at the bottom.
 
-![Example of what it should look like](https://i.imgur.com/5X1GTFJ.png)
-
 From here, you can now install my plugins from within the game by typing `/xlplugins` in the chat and hitting enter.
 Now, just select one of my plugins you wish to install like normal, and click "Install".
 All of my plugins are tagged with my username "Bluefissure", so you can enter that in the search field to see all of the plugins I've created.
-
-![Plugin Installer example](https://i.imgur.com/nGres6J.png)
 
 ## Updating Plugins
 
@@ -29,8 +25,8 @@ When an update is available, you will be able to click the "Update plugins" butt
 Below is a list of the plugins that are available in this repo and their current version:
 
 * [Inviter](https://github.com/Bluefissure/Inviter)
-* [MapLinker](https://github.com/Bluefissure/MapLinker): Hidden because of already in the official plugin repo.
 * [HousingPos](https://github.com/Bluefissure/HousingPos)
+* [MapLinker](https://github.com/Bluefissure/MapLinker): Hidden because of already in the official plugin repo.
 
 ## Donations
 
