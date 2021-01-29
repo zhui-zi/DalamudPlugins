@@ -30,6 +30,7 @@ Below is a list of the plugins that are available in this repo and their current
 
 * [Inviter](https://github.com/Bluefissure/Inviter)
 * [MapLinker](https://github.com/Bluefissure/MapLinker): Hidden because of already in the official plugin repo.
+* [HousingPos](https://github.com/Bluefissure/HousingPos)
 
 ## Donations
 
