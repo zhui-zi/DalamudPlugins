@@ -1,7 +1,7 @@
-# CN Neat Plugins
+# Bluefissure Plugins
 
-这些是社区制作的插件，您可以在启用游戏内置插件后使用 /xlplugins 在游戏中安装。
+These are plugins made by myself.
 
 
-| 作者 | 插件名 | 简介 |
+| Author | Name | Description |
 |---------------|---------------|-----------------|

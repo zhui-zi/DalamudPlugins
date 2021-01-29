@@ -1,12 +1,12 @@
 $ErrorActionPreference = 'SilentlyContinue'
 
 $output = New-Object Collections.Generic.List[object]
-$notInclude = "vberfgg", "sdafsaf", "XIVStats", "bffbbf", "VoidList", "asdfsad", "sdfgdfsg", "vrgnddgv";
+$notInclude = "MapLinker";
 
 $counts = Get-Content "downloadcounts.json" | ConvertFrom-Json
 
-$dlTemplateInstall = "https://gitee.com/bluefissure/DalamudPlugins/raw/cn/plugins/{0}/latest.zip"
-$dlTemplateUpdate = "https://gitee.com/bluefissure/DalamudPlugins/raw/cn/plugins/{0}/latest.zip"
+$dlTemplateInstall = "https://github.com/Bluefissure/DalamudPlugins/raw/bluefissure/plugins/{0}/latest.zip"
+$dlTemplateUpdate = "https://github.com/Bluefissure/DalamudPlugins/raw/bluefissure/plugins/{0}/latest.zip"
 
 $thisPath = Get-Location
 
