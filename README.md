@@ -27,7 +27,7 @@ Below is a list of the plugins that are available in this repo and their current
 * [Inviter](https://github.com/Bluefissure/Inviter): automatically invite players who says "inv" (or whatever you want to match) to your party.
 * [HousingPos](https://github.com/Bluefissure/HousingPos): read/save/load housing presets.
 * [NoKillPlugin](https://github.com/Bluefissure/NoKillPlugin): prevent the game from killing itself after login fails.
-* [MapLinker](https://github.com/Bluefissure/MapLinker): record the maplink information existing in the in-game chat, and then query or teleport to the nearest crystal. **Hidden**
+* ~~[MapLinker](https://github.com/Bluefissure/MapLinker): record the maplink information existing in the in-game chat, and then query or teleport to the nearest crystal.~~
 
 ## Donations
 
