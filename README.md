@@ -24,8 +24,9 @@ When an update is available, you will be able to click the "Update plugins" butt
 
 Below is a list of the plugins that are available in this repo and their current version:
 
-* [Inviter](https://github.com/Bluefissure/Inviter)
-* [HousingPos](https://github.com/Bluefissure/HousingPos)
+* [Inviter](https://github.com/Bluefissure/Inviter): A plugin to automatically invite players who says "inv" (or whatever you want to match) to your party.
+* [HousingPos](https://github.com/Bluefissure/HousingPos): Read/save/load housing presets.
+* [NoKillPlugin](https://github.com/Bluefissure/NoKillPlugin): A simple plugin that prevents the game from killing itself after login fails.
 * [MapLinker](https://github.com/Bluefissure/MapLinker): Hidden because of already in the official plugin repo.
 
 ## Donations
