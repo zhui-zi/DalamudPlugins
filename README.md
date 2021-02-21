@@ -22,7 +22,7 @@ When an update is available, you will be able to click the "Update plugins" butt
 
 ## My Plugins
 
-Below is a list of the plugins that are available in this repo and their current version:
+Below is a list of the plugins that are available in this repo:
 
 * [Inviter](https://github.com/Bluefissure/Inviter): automatically invite players who says "inv" (or whatever you want to match) to your party.
 * [HousingPos](https://github.com/Bluefissure/HousingPos): read/save/load housing presets.
