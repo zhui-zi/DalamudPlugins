@@ -1,0 +1,11 @@
+{
+  "Author": "Bluefissure",
+  "Name": "SmartVote",
+  "InternalName": "SmartVote",
+  "AssemblyVersion": "1.0.0.0",
+  "Description": "Smart Vote the Mvp for you.",
+  "ApplicableVersion": "any",
+  "RepoUrl": "https://github.com/Bluefissure/SmartVote",
+  "DalamudApiLevel": 2,
+  "LoadPriority": 0
+}
