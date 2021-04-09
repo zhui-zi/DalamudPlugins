@@ -4,7 +4,7 @@
     "Name": "HousingPos",
     "Description": "Automatically save/load the positions of housing furnitures.",
     "InternalName": "HousingPos",
-    "AssemblyVersion": "1.0.9.1",
+    "AssemblyVersion": "1.0.9.2",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/Bluefissure/HousingPos",
     "Tags": [
@@ -15,7 +15,7 @@
     "IsHide": "False",
     "IsTestingExclusive": "False",
     "DownloadCount": 0,
-    "LastUpdate": "1617642042",
+    "LastUpdate": "1618002097",
     "DownloadLinkInstall": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/HousingPos/latest.zip",
     "DownloadLinkTesting": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/HousingPos/latest.zip",
     "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/HousingPos/latest.zip"
