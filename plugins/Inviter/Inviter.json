@@ -3,8 +3,8 @@
     "Name": "Inviter",
     "Description": "Automatically invite people to your party (doesn't work for CWLS). /xinvite to open.",
     "InternalName": "Inviter",
-    "AssemblyVersion": "1.0.1.0",
+    "AssemblyVersion": "1.0.2.0",
     "RepoUrl": "https://github.com/Bluefissure/Inviter",
     "ApplicableVersion": "any",
-    "DalamudApiLevel": 2
+    "DalamudApiLevel": 3
 }
