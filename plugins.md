@@ -5,6 +5,7 @@ These are plugins made by myself.
 
 | Author | Name | Description |
 |---------------|---------------|-----------------|
+| Bluefissure | Double Weaver | Double weaving in high latency network. |
 | Bluefissure | HousingPos | Automatically save/load the positions of housing furnitures. |
 | Bluefissure | IMEPlugin | Adds an overlay to support IME in dalamud input. |
 | Bluefissure | Inviter | Automatically invite people to your party (doesn't work for CWLS). /xinvite to open. |

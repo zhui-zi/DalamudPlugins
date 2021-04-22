@@ -1,6 +1,27 @@
 [
   {
     "Author": "Bluefissure",
+    "Name": "Double Weaver",
+    "Description": "Double weaving in high latency network.",
+    "InternalName": "DoubleWeaver",
+    "AssemblyVersion": "1.0.0.0",
+    "RepoUrl": "https://github.com/Bluefissure/DoubleWeaver",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "bluefissure",
+      "doublewaver"
+    ],
+    "DalamudApiLevel": 3,
+    "IsHide": "False",
+    "IsTestingExclusive": "False",
+    "DownloadCount": 0,
+    "LastUpdate": "1619051326",
+    "DownloadLinkInstall": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/DoubleWeaver/latest.zip",
+    "DownloadLinkTesting": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/DoubleWeaver/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/DoubleWeaver/latest.zip"
+  },
+  {
+    "Author": "Bluefissure",
     "Name": "HousingPos",
     "Description": "Automatically save/load the positions of housing furnitures.",
     "InternalName": "HousingPos",
