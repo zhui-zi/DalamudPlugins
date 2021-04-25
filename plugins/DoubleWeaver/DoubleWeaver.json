@@ -3,7 +3,7 @@
   "Name": "Double Weaver",
   "Description": "Double weaving in high latency network. Make sure to install PingPlugin for this to work properly.",
   "InternalName": "DoubleWeaver",
-  "AssemblyVersion": "1.0.2.2",
+  "AssemblyVersion": "1.0.3.0",
   "RepoUrl": "https://github.com/Bluefissure/DoubleWeaver",
   "ApplicableVersion": "any",
   "Tags": [ "bluefissure", "doublewaver"],
