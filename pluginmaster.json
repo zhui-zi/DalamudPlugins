@@ -53,13 +53,13 @@
       "UI"
     ],
     "RepoUrl": "https://github.com/Bluefissure/IMEPlugin",
-    "AssemblyVersion": "1.0.5.0",
+    "AssemblyVersion": "1.0.6.0",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 3,
     "IsHide": "False",
     "IsTestingExclusive": "False",
     "DownloadCount": 0,
-    "LastUpdate": "1618538468",
+    "LastUpdate": "1621181574",
     "DownloadLinkInstall": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/IMEPlugin/latest.zip",
     "DownloadLinkTesting": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/IMEPlugin/latest.zip",
     "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/IMEPlugin/latest.zip"
