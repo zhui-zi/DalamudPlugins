@@ -31,6 +31,7 @@ Below is a list of the plugins that are available in this repo:
 * [SmartVote](https://github.com/Bluefissure/SmartVote): vote the mvp player in player commendation for you.
 * [IMEPlugin](https://github.com/Bluefissure/IMEPlugin): add a simple overlay to use Input Method(IME) in dalamud UI inputs.
 * [DoubleWeaver](https://github.com/Bluefissure/DoubleWeaver): Double weaving in high latency network.
+* [WindowLocker](https://github.com/Bluefissure/WindowLocker): Lock the positions of specified windows.
 
 ## Donations
 
