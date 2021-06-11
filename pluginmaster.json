@@ -115,5 +115,27 @@
     "DownloadLinkInstall": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/SmartVote/latest.zip",
     "DownloadLinkTesting": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/SmartVote/latest.zip",
     "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/SmartVote/latest.zip"
+  },
+  {
+    "Author": "Bluefissure",
+    "Name": "Window Locker",
+    "Description": "A simple plugin that lock the positions of specified windows. /windowlocker to open.",
+    "InternalName": "WindowLocker",
+    "AssemblyVersion": "1.0.0.0",
+    "RepoUrl": "https://github.com/Bluefissure/WindowLocker",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "Bluefissure",
+      "UI",
+      "window"
+    ],
+    "DalamudApiLevel": 3,
+    "IsHide": "False",
+    "IsTestingExclusive": "False",
+    "DownloadCount": 0,
+    "LastUpdate": "1623447612",
+    "DownloadLinkInstall": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/WindowLocker/latest.zip",
+    "DownloadLinkTesting": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/WindowLocker/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/WindowLocker/latest.zip"
   }
 ]
