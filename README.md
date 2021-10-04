@@ -1,6 +1,8 @@
 # Dalamud Plugins
 Contains the repository JSON file for my Dalamud Plugins for third party plugin support.
 
+**For API4 / Dalamud v6.0.0.0+, please go to [this branch](https://github.com/Bluefissure/DalamudPlugins/tree/Bluefissure-api4).**
+
 ## How to use
 
 **NOTE: If you used any of my plugins prior to this, please delete them from your installed locations.**
