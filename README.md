@@ -1,9 +1,7 @@
 # Dalamud Plugins
 Contains the repository JSON file for my Dalamud Plugins for third party plugin support.
 
-**This Repo is for plugins in API5, though not all plugins are updated.**
-
-**For API4 / Dalamud before Endwalker, please go to [this branch](https://github.com/Bluefissure/DalamudPlugins/tree/Bluefissure-api4).**
+**This Repo is for plugins in API6, though not all plugins are updated.**
 
 ## How to use
 
