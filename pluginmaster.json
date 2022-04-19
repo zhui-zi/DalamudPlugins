@@ -23,12 +23,12 @@
     "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/DoubleWeaver/latest.zip"
   },
   {
-    "Name": "HousingPos",
     "Author": "Bluefissure",
+    "Name": "HousingPos",
     "Punchline": "Housing presets",
     "Description": "Automatically save/load the positions of housing furnitures.",
     "InternalName": "HousingPos",
-    "AssemblyVersion": "1.2.0.0",
+    "AssemblyVersion": "1.2.1.0",
     "ApplicableVersion": "any",
     "IconUrl": "https://raw.githubusercontent.com/Bluefissure/HousingPos/master/images/icon.png",
     "RepoUrl": "https://github.com/Bluefissure/HousingPos",
@@ -36,11 +36,11 @@
       "bluefissure",
       "housing"
     ],
-    "DalamudApiLevel": 5,
+    "DalamudApiLevel": 6,
     "IsHide": "False",
     "IsTestingExclusive": "False",
     "DownloadCount": 0,
-    "LastUpdate": "1639105128",
+    "LastUpdate": "1650378915",
     "DownloadLinkInstall": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/HousingPos/latest.zip",
     "DownloadLinkTesting": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/HousingPos/latest.zip",
     "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/HousingPos/latest.zip"
