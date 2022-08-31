@@ -9,5 +9,6 @@
   "DalamudApiLevel": 7,
   "LoadPriority": 0,
   "IconUrl": "https://raw.githubusercontent.com/Bluefissure/Inviter/main/images/icon.png",
+  "IsHide": "True",
   "Punchline": "Invite please"
 }
