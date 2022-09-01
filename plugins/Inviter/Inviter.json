@@ -2,13 +2,12 @@
   "Author": "Bluefissure",
   "Name": "Inviter",
   "InternalName": "Inviter",
-  "AssemblyVersion": "1.0.9.0",
+  "AssemblyVersion": "1.1.0.0",
   "Description": "Automatically invite people to your party (doesn't work for CWLS). /xinvite to open.",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/Bluefissure/Inviter",
   "DalamudApiLevel": 7,
   "LoadPriority": 0,
   "IconUrl": "https://raw.githubusercontent.com/Bluefissure/Inviter/main/images/icon.png",
-  "IsHide": "True",
   "Punchline": "Invite please"
 }
