@@ -1,7 +1,7 @@
 # Dalamud Plugins
 Contains the repository JSON file for my Dalamud Plugins for third party plugin support.
 
-**This Repo is for plugins in API6, though not all plugins are updated.**
+**This Repo is for plugins in API7, though not all plugins are updated.**
 
 ## How to use
 
