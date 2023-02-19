@@ -85,9 +85,9 @@
     "IsTestingExclusive": "False",
     "DownloadCount": 0,
     "LastUpdate": "1662012924",
-    "DownloadLinkInstall": "https://github.com/Bluefissure/DalamudPlugins/raw/4bcfb0fdee0e958c698e54e1fdb6a834befb9548/plugins/HousingPos/Inviter.zip",
-    "DownloadLinkTesting": "https://github.com/Bluefissure/DalamudPlugins/raw/4bcfb0fdee0e958c698e54e1fdb6a834befb9548/plugins/HousingPos/Inviter.zip",
-    "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/4bcfb0fdee0e958c698e54e1fdb6a834befb9548/plugins/HousingPos/Inviter.zip"
+    "DownloadLinkInstall": "https://github.com/Bluefissure/DalamudPlugins/raw/4bcfb0fdee0e958c698e54e1fdb6a834befb9548/plugins/Inviter/latest.zip",
+    "DownloadLinkTesting": "https://github.com/Bluefissure/DalamudPlugins/raw/4bcfb0fdee0e958c698e54e1fdb6a834befb9548/plugins/Inviter/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/4bcfb0fdee0e958c698e54e1fdb6a834befb9548/plugins/Inviter/latest.zip"
   },
   {
     "Author": "Bluefissure",
