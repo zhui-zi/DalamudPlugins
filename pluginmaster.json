@@ -81,7 +81,7 @@
     "Author": "Bluefissure",
     "Name": "Inviter",
     "InternalName": "Inviter",
-    "AssemblyVersion": "1.1.2.2",
+    "AssemblyVersion": "1.1.2.3",
     "Description": "Automatically invite people to your party (doesn't work for CWLS). /xinvite to open.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/Bluefissure/Inviter",
@@ -96,7 +96,7 @@
     "IsHide": "False",
     "IsTestingExclusive": "False",
     "DownloadCount": 0,
-    "LastUpdate": "1721268133",
+    "LastUpdate": "1728051229",
     "DownloadLinkInstall": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/Inviter/latest.zip",
     "DownloadLinkTesting": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/Inviter/latest.zip",
     "DownloadLinkUpdate": "https://github.com/Bluefissure/DalamudPlugins/raw/Bluefissure/plugins/Inviter/latest.zip"
