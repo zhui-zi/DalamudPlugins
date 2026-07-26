@@ -29,10 +29,10 @@
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/IMEGarbageFix/latest.zip"
   },
   {
-    "Author": "黑川启太",
-    "Name": "肖像装备同步",
+    "Author": "zhui-zi",
+    "Name": "Portrait Gear Sync",
     "InternalName": "PortraitGearSync",
-    "AssemblyVersion": "1.1.0.0",
+    "AssemblyVersion": "1.1.0.1",
     "Description": "自动同步装备套装、关联投影模板和即时肖像。支持头部装备显示、面罩、最强装备及投影模板应用后的同步，并可在不切换职业的情况下更新所有共用装备的套装与肖像。所有功能均可在设置中独立开关。",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
@@ -52,7 +52,7 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1785052441,
+    "LastUpdate": 1785053285,
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/PortraitGearSync/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/PortraitGearSync/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/PortraitGearSync/latest.zip"
