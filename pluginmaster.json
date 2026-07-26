@@ -1,0 +1,31 @@
+[
+  {
+    "Author": "黑川启太",
+    "Name": "输入法乱码修复",
+    "InternalName": "IMEGarbageFix",
+    "AssemblyVersion": "1.0.0.0",
+    "Description": "在游戏和 Dalamud 插件都不处于文字输入状态时，定期清空 Windows 输入法组字缓冲，避免走位、技能等按键在打开聊天框或插件输入框后变成一大串英文字母。",
+    "ApplicableVersion": "any",
+    "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
+    "Tags": [
+      "输入法",
+      "中文",
+      "IME",
+      "修复"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "防止非输入状态下的按键被中文输入法积攒并倒入输入框。",
+    "AcceptsFeedback": true,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadCount": 0,
+    "LastUpdate": 1785030196,
+    "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/IMEGarbageFix/latest.zip",
+    "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/IMEGarbageFix/latest.zip",
+    "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/IMEGarbageFix/latest.zip"
+  }
+]
