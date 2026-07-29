@@ -16,6 +16,7 @@ const string DownloadBase =
 
 var force = args.Any(argument => argument.Equals("--force", StringComparison.OrdinalIgnoreCase));
 var dumpConfigs = args.Any(argument => argument.Equals("--dump-configs", StringComparison.OrdinalIgnoreCase));
+var dumpAll = args.Any(argument => argument.Equals("--dump-all", StringComparison.OrdinalIgnoreCase));
 var repositoryArgument = args.FirstOrDefault(argument => !argument.StartsWith("--", StringComparison.Ordinal));
 var repositoryRoot = repositoryArgument is not null
 	? Path.GetFullPath(repositoryArgument)
@@ -23,6 +24,12 @@ var repositoryRoot = repositoryArgument is not null
 var translationPath = Path.Combine(repositoryRoot, "plugins", "RotationSolver", "translations.zh-CN.json");
 var configTranslationPath =
 	Path.Combine(repositoryRoot, "plugins", "RotationSolver", "config-names.zh-CN.json");
+var configDescriptionTranslationPath =
+	Path.Combine(repositoryRoot, "plugins", "RotationSolver", "config-descriptions.zh-CN.json");
+var rotationConfigTranslationPath =
+	Path.Combine(repositoryRoot, "plugins", "RotationSolver", "rotation-configs.zh-CN.json");
+var rotationTooltipTranslationPath =
+	Path.Combine(repositoryRoot, "plugins", "RotationSolver", "rotation-tooltips.zh-CN.json");
 var outputDirectory = Path.Combine(repositoryRoot, "plugins", "RotationSolver");
 var outputZip = Path.Combine(outputDirectory, "latest.zip");
 var pluginMasterPath = Path.Combine(repositoryRoot, "pluginmaster.json");
@@ -31,6 +38,18 @@ if (!File.Exists(translationPath))
 	throw new FileNotFoundException("Translation file was not found.", translationPath);
 if (!File.Exists(configTranslationPath))
 	throw new FileNotFoundException("Config translation file was not found.", configTranslationPath);
+if (!dumpAll && !File.Exists(configDescriptionTranslationPath))
+	throw new FileNotFoundException(
+		"Config description translation file was not found.",
+		configDescriptionTranslationPath);
+if (!dumpAll && !File.Exists(rotationConfigTranslationPath))
+	throw new FileNotFoundException(
+		"Rotation config translation file was not found.",
+		rotationConfigTranslationPath);
+if (!dumpAll && !File.Exists(rotationTooltipTranslationPath))
+	throw new FileNotFoundException(
+		"Rotation tooltip translation file was not found.",
+		rotationTooltipTranslationPath);
 
 Directory.CreateDirectory(outputDirectory);
 var translations = JsonSerializer.Deserialize<Dictionary<string, string>>(
@@ -39,6 +58,21 @@ var translations = JsonSerializer.Deserialize<Dictionary<string, string>>(
 var configTranslations = JsonSerializer.Deserialize<Dictionary<string, string>>(
 	await File.ReadAllTextAsync(configTranslationPath, Encoding.UTF8))
 	?? throw new InvalidDataException("Config translation file is empty.");
+var configDescriptionTranslations = dumpAll
+	? new Dictionary<string, string>()
+	: JsonSerializer.Deserialize<Dictionary<string, string>>(
+		await File.ReadAllTextAsync(configDescriptionTranslationPath, Encoding.UTF8))
+		?? throw new InvalidDataException("Config description translation file is empty.");
+var rotationConfigTranslations = dumpAll
+	? new Dictionary<string, string>()
+	: JsonSerializer.Deserialize<Dictionary<string, string>>(
+		await File.ReadAllTextAsync(rotationConfigTranslationPath, Encoding.UTF8))
+		?? throw new InvalidDataException("Rotation config translation file is empty.");
+var rotationTooltipTranslations = dumpAll
+	? new Dictionary<string, string>()
+	: JsonSerializer.Deserialize<Dictionary<string, string>>(
+		await File.ReadAllTextAsync(rotationTooltipTranslationPath, Encoding.UTF8))
+		?? throw new InvalidDataException("Rotation tooltip translation file is empty.");
 
 using var http = new HttpClient();
 http.DefaultRequestHeaders.UserAgent.ParseAdd("zhui-zi/DalamudPlugins");
@@ -54,7 +88,8 @@ var downloadUrl = upstream["DownloadLinkUpdate"]?.GetValue<string>()
 	?? upstream["DownloadLinkInstall"]?.GetValue<string>()
 	?? throw new InvalidDataException("Upstream download URL is missing.");
 
-if (!force && File.Exists(outputZip) && GetLocalVersion(pluginMasterPath) == upstreamVersion)
+if (!force && !dumpAll && !dumpConfigs
+	&& File.Exists(outputZip) && GetLocalVersion(pluginMasterPath) == upstreamVersion)
 {
 	Console.WriteLine($"RotationSolver {upstreamVersion} is already localized.");
 	return;
@@ -82,6 +117,14 @@ try
 
 	if (dumpConfigs)
 		DumpConfigStrings(basicAssemblyPath);
+	if (dumpAll)
+	{
+		DumpLocalizationInventory(
+			assemblyPath,
+			basicAssemblyPath,
+			outputDirectory);
+		return;
+	}
 
 	var patchedCount = PatchUiStrings(assemblyPath, translations);
 	if (patchedCount != translations.Count)
@@ -91,6 +134,24 @@ try
 	if (patchedConfigCount < configTranslations.Count * 0.85)
 		throw new InvalidDataException(
 			$"Config translation coverage is unexpectedly low: {patchedConfigCount}/{configTranslations.Count}.");
+	var patchedConfigDescriptionCount =
+		PatchConfigDescriptions(basicAssemblyPath, configDescriptionTranslations);
+	if (patchedConfigDescriptionCount < configDescriptionTranslations.Count * 0.85)
+		throw new InvalidDataException(
+			"Config description translation coverage is unexpectedly low: " +
+			$"{patchedConfigDescriptionCount}/{configDescriptionTranslations.Count}.");
+	var (patchedRotationConfigCount, patchedRotationTooltipCount) = PatchRotationConfigs(
+		assemblyPath,
+		rotationConfigTranslations,
+		rotationTooltipTranslations);
+	if (patchedRotationConfigCount < rotationConfigTranslations.Count * 0.85)
+		throw new InvalidDataException(
+			"Rotation config translation coverage is unexpectedly low: " +
+			$"{patchedRotationConfigCount}/{rotationConfigTranslations.Count}.");
+	if (patchedRotationTooltipCount < rotationTooltipTranslations.Count * 0.85)
+		throw new InvalidDataException(
+			"Rotation tooltip translation coverage is unexpectedly low: " +
+			$"{patchedRotationTooltipCount}/{rotationTooltipTranslations.Count}.");
 
 	var manifest = JsonNode.Parse(await File.ReadAllTextAsync(manifestPath, Encoding.UTF8))?.AsObject()
 		?? throw new InvalidDataException("Upstream manifest is invalid.");
@@ -107,7 +168,9 @@ try
 	UpdatePluginMaster(pluginMasterPath, upstream);
 	Console.WriteLine(
 		$"Localized RotationSolver {upstreamVersion}: {patchedCount} UI strings, " +
-		$"{patchedConfigCount} config names.");
+		$"{patchedConfigCount} config names, {patchedConfigDescriptionCount} config descriptions, " +
+		$"{patchedRotationConfigCount} rotation configs, " +
+		$"{patchedRotationTooltipCount} rotation tooltips.");
 	Console.WriteLine(outputZip);
 }
 finally
@@ -120,7 +183,7 @@ static int PatchUiStrings(string assemblyPath, IReadOnlyDictionary<string, strin
 {
 	var temporaryAssembly = assemblyPath + ".localized";
 	AssemblySnapshot before;
-	using (var module = ModuleDefMD.Load(assemblyPath))
+	using (var module = LoadModuleWithLocalResolver(assemblyPath))
 	{
 		before = CaptureStructure(module);
 		var uiString = module.Find("RotationSolver.Data.UiString", false)
@@ -149,7 +212,7 @@ static int PatchUiStrings(string assemblyPath, IReadOnlyDictionary<string, strin
 		module.Write(temporaryAssembly);
 	}
 
-	using (var localizedModule = ModuleDefMD.Load(temporaryAssembly))
+	using (var localizedModule = LoadModuleWithLocalResolver(temporaryAssembly))
 	{
 		var after = CaptureStructure(localizedModule);
 		if (before != after)
@@ -167,7 +230,7 @@ static int PatchConfigNames(string assemblyPath, IReadOnlyDictionary<string, str
 	var temporaryAssembly = assemblyPath + ".localized";
 	AssemblySnapshot before;
 	var patched = new Dictionary<string, string>(StringComparer.Ordinal);
-	using (var module = ModuleDefMD.Load(assemblyPath))
+	using (var module = LoadModuleWithLocalResolver(assemblyPath))
 	{
 		before = CaptureStructure(module);
 		var configs = module.Find("RotationSolver.Basic.Configuration.Configs", false)
@@ -189,7 +252,7 @@ static int PatchConfigNames(string assemblyPath, IReadOnlyDictionary<string, str
 		module.Write(temporaryAssembly);
 	}
 
-	using (var localizedModule = ModuleDefMD.Load(temporaryAssembly))
+	using (var localizedModule = LoadModuleWithLocalResolver(temporaryAssembly))
 	{
 		var after = CaptureStructure(localizedModule);
 		if (before != after)
@@ -201,6 +264,137 @@ static int PatchConfigNames(string assemblyPath, IReadOnlyDictionary<string, str
 
 	File.Move(temporaryAssembly, assemblyPath, true);
 	return patched.Count;
+}
+
+static int PatchConfigDescriptions(
+	string assemblyPath,
+	IReadOnlyDictionary<string, string> translations)
+{
+	var temporaryAssembly = assemblyPath + ".localized";
+	AssemblySnapshot before;
+	var patched = new Dictionary<string, string>(StringComparer.Ordinal);
+	using (var module = ModuleDefMD.Load(assemblyPath))
+	{
+		before = CaptureStructure(module);
+		var configs = module.Find("RotationSolver.Basic.Configuration.Configs", false)
+			?? throw new InvalidDataException("RotationSolver.Basic.Configuration.Configs was not found.");
+		foreach (var property in configs.Properties)
+		{
+			if (!translations.TryGetValue(property.Name, out var localized))
+				continue;
+
+			var ui = property.CustomAttributes.FirstOrDefault(attribute =>
+				attribute.AttributeType.FullName == "RotationSolver.Basic.Attributes.UIAttribute");
+			if (ui is null || !PatchNamedString(ui, "Description", localized, module))
+				continue;
+
+			patched[property.Name] = localized;
+		}
+
+		module.Write(temporaryAssembly);
+	}
+
+	using (var localizedModule = ModuleDefMD.Load(temporaryAssembly))
+	{
+		var after = CaptureStructure(localizedModule);
+		if (before != after)
+			throw new InvalidDataException(
+				$"Basic assembly structure changed unexpectedly.\nBefore: {before}\nAfter: {after}");
+
+		VerifyNamedAttributeTranslations(
+			localizedModule,
+			"RotationSolver.Basic.Configuration.Configs",
+			"RotationSolver.Basic.Attributes.UIAttribute",
+			"Description",
+			patched);
+	}
+
+	File.Move(temporaryAssembly, assemblyPath, true);
+	return patched.Count;
+}
+
+static (int Names, int Tooltips) PatchRotationConfigs(
+	string assemblyPath,
+	IReadOnlyDictionary<string, string> nameTranslations,
+	IReadOnlyDictionary<string, string> tooltipTranslations)
+{
+	const string attributeName = "RotationSolver.Basic.Attributes.RotationConfigAttribute";
+	var temporaryAssembly = assemblyPath + ".localized";
+	AssemblySnapshot before;
+	var patchedNames = new Dictionary<string, string>(StringComparer.Ordinal);
+	var patchedTooltips = new Dictionary<string, string>(StringComparer.Ordinal);
+	using (var module = LoadModuleWithLocalResolver(assemblyPath))
+	{
+		before = CaptureStructure(module);
+		foreach (var type in module.GetTypes())
+		{
+			foreach (var property in type.Properties)
+			{
+				var key = $"{type.FullName}.{property.Name}";
+				var attribute = property.CustomAttributes.FirstOrDefault(candidate =>
+					candidate.AttributeType.FullName == attributeName);
+				if (attribute is null)
+					continue;
+
+				if (nameTranslations.TryGetValue(key, out var localizedName)
+					&& PatchNamedString(attribute, "Name", localizedName, module))
+					patchedNames[key] = localizedName;
+				if (tooltipTranslations.TryGetValue(key, out var localizedTooltip)
+					&& PatchNamedString(attribute, "Tooltip", localizedTooltip, module))
+					patchedTooltips[key] = localizedTooltip;
+			}
+		}
+
+		module.Write(temporaryAssembly);
+	}
+
+	using (var localizedModule = LoadModuleWithLocalResolver(temporaryAssembly))
+	{
+		var after = CaptureStructure(localizedModule);
+		if (before != after)
+			throw new InvalidDataException(
+				$"Main assembly structure changed unexpectedly.\nBefore: {before}\nAfter: {after}");
+
+		VerifyRotationConfigTranslations(localizedModule, patchedNames, patchedTooltips);
+	}
+
+	File.Move(temporaryAssembly, assemblyPath, true);
+	return (patchedNames.Count, patchedTooltips.Count);
+}
+
+static bool PatchNamedString(
+	CustomAttribute attribute,
+	string argumentName,
+	string localized,
+	ModuleDef module)
+{
+	for (var index = 0; index < attribute.NamedArguments.Count; index++)
+	{
+		var named = attribute.NamedArguments[index];
+		if (named.Name != argumentName)
+			continue;
+
+		named.Argument = new CAArgument(module.CorLibTypes.String, localized);
+		attribute.NamedArguments[index] = named;
+		return true;
+	}
+
+	return false;
+}
+
+static ModuleDefMD LoadModuleWithLocalResolver(string assemblyPath)
+{
+	var context = ModuleDef.CreateModuleContext();
+	if (context.AssemblyResolver is AssemblyResolver resolver)
+	{
+		resolver.EnableTypeDefCache = true;
+		resolver.DefaultModuleContext = context;
+		var directory = Path.GetDirectoryName(assemblyPath);
+		if (!string.IsNullOrEmpty(directory))
+			resolver.PreSearchPaths.Add(directory);
+	}
+
+	return ModuleDefMD.Load(assemblyPath, context);
 }
 
 static AssemblySnapshot CaptureStructure(ModuleDefMD module)
@@ -300,6 +494,145 @@ static void VerifyConfigNames(ModuleDefMD module, IReadOnlyDictionary<string, st
 			throw new InvalidDataException($"Localized Configs.{key} did not pass verification.");
 	}
 }
+
+static void VerifyNamedAttributeTranslations(
+	ModuleDefMD module,
+	string typeName,
+	string attributeName,
+	string argumentName,
+	IReadOnlyDictionary<string, string> translations)
+{
+	var type = module.Find(typeName, false)
+		?? throw new InvalidDataException($"Localized {typeName} was not found.");
+	foreach (var (key, expected) in translations)
+	{
+		var property = type.Properties.FirstOrDefault(candidate => candidate.Name == key)
+			?? throw new InvalidDataException($"Localized {typeName}.{key} was not found.");
+		var attribute = property.CustomAttributes.FirstOrDefault(candidate =>
+			candidate.AttributeType.FullName == attributeName)
+			?? throw new InvalidDataException(
+				$"Localized attribute {attributeName} was not found on {typeName}.{key}.");
+		var actual = ReadNamedString(attribute, argumentName);
+		if (!string.Equals(actual, expected, StringComparison.Ordinal))
+			throw new InvalidDataException(
+				$"Localized {typeName}.{key}.{argumentName} did not pass verification.");
+	}
+}
+
+static void VerifyRotationConfigTranslations(
+	ModuleDefMD module,
+	IReadOnlyDictionary<string, string> nameTranslations,
+	IReadOnlyDictionary<string, string> tooltipTranslations)
+{
+	const string attributeName = "RotationSolver.Basic.Attributes.RotationConfigAttribute";
+	var properties = module.GetTypes()
+		.SelectMany(type => type.Properties.Select(property => (type, property)))
+		.ToDictionary(
+			pair => $"{pair.type.FullName}.{pair.property.Name}",
+			pair => pair.property,
+			StringComparer.Ordinal);
+	foreach (var (key, expected) in nameTranslations)
+		VerifyRotationConfigNamedArgument(properties, key, attributeName, "Name", expected);
+	foreach (var (key, expected) in tooltipTranslations)
+		VerifyRotationConfigNamedArgument(properties, key, attributeName, "Tooltip", expected);
+}
+
+static void VerifyRotationConfigNamedArgument(
+	IReadOnlyDictionary<string, PropertyDef> properties,
+	string key,
+	string attributeName,
+	string argumentName,
+	string expected)
+{
+	if (!properties.TryGetValue(key, out var property))
+		throw new InvalidDataException($"Localized rotation config {key} was not found.");
+	var attribute = property.CustomAttributes.FirstOrDefault(candidate =>
+		candidate.AttributeType.FullName == attributeName)
+		?? throw new InvalidDataException(
+			$"Localized rotation config attribute was not found on {key}.");
+	var actual = ReadNamedString(attribute, argumentName);
+	if (!string.Equals(actual, expected, StringComparison.Ordinal))
+		throw new InvalidDataException(
+			$"Localized rotation config {key}.{argumentName} did not pass verification.");
+}
+
+static string ReadNamedString(CustomAttribute attribute, string argumentName)
+{
+	foreach (var argument in attribute.NamedArguments)
+	{
+		if (argument.Name == argumentName)
+			return (argument.Argument.Value as UTF8String)?.String ?? string.Empty;
+	}
+
+	return string.Empty;
+}
+
+static void DumpLocalizationInventory(
+	string assemblyPath,
+	string basicAssemblyPath,
+	string outputDirectory)
+{
+	var configDescriptions = new SortedDictionary<string, string>(StringComparer.Ordinal);
+	using (var module = ModuleDefMD.Load(basicAssemblyPath))
+	{
+		var configs = module.Find("RotationSolver.Basic.Configuration.Configs", false)
+			?? throw new InvalidDataException("RotationSolver.Basic.Configuration.Configs was not found.");
+		foreach (var property in configs.Properties)
+		{
+			var ui = property.CustomAttributes.FirstOrDefault(attribute =>
+				attribute.AttributeType.FullName == "RotationSolver.Basic.Attributes.UIAttribute");
+			if (ui is null)
+				continue;
+			var description = ReadNamedString(ui, "Description");
+			if (!string.IsNullOrWhiteSpace(description))
+				configDescriptions[property.Name] = description;
+		}
+	}
+
+	var rotationConfigs = new SortedDictionary<string, string>(StringComparer.Ordinal);
+	var rotationTooltips = new SortedDictionary<string, string>(StringComparer.Ordinal);
+	using (var module = LoadModuleWithLocalResolver(assemblyPath))
+	{
+		foreach (var type in module.GetTypes())
+		{
+			foreach (var property in type.Properties)
+			{
+				var attribute = property.CustomAttributes.FirstOrDefault(candidate =>
+					candidate.AttributeType.FullName
+						== "RotationSolver.Basic.Attributes.RotationConfigAttribute");
+				if (attribute is null)
+					continue;
+
+				var key = $"{type.FullName}.{property.Name}";
+				var name = ReadNamedString(attribute, "Name");
+				var tooltip = ReadNamedString(attribute, "Tooltip");
+				if (!string.IsNullOrWhiteSpace(name))
+					rotationConfigs[key] = name;
+				if (!string.IsNullOrWhiteSpace(tooltip))
+					rotationTooltips[key] = tooltip;
+			}
+		}
+	}
+
+	WriteJson(
+		Path.Combine(outputDirectory, "config-descriptions.source.json"),
+		configDescriptions);
+	WriteJson(
+		Path.Combine(outputDirectory, "rotation-configs.source.json"),
+		rotationConfigs);
+	WriteJson(
+		Path.Combine(outputDirectory, "rotation-tooltips.source.json"),
+		rotationTooltips);
+	Console.WriteLine(
+		$"Dumped {configDescriptions.Count} config descriptions, " +
+		$"{rotationConfigs.Count} rotation configs, and {rotationTooltips.Count} rotation tooltips.");
+}
+
+static void WriteJson<T>(string path, T value)
+	=> File.WriteAllText(
+		path,
+		JsonSerializer.Serialize(value, CreateJsonOptions()) + Environment.NewLine,
+		new UTF8Encoding(false));
 
 static void DumpConfigStrings(string assemblyPath)
 {
