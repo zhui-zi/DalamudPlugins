@@ -1,0 +1,54 @@
+name: Sync Rotation Solver
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild the current upstream version
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-rotation-solver
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Localize latest upstream package
+        shell: bash
+        run: |
+          args=("$GITHUB_WORKSPACE")
+          if [[ "${{ inputs.force }}" == "true" ]]; then
+            args+=("--force")
+          fi
+          dotnet run \
+            --project tools/RotationSolverLocalizer/RotationSolverLocalizer.csproj \
+            --configuration Release \
+            -- "${args[@]}"
+
+      - name: Publish update
+        shell: bash
+        run: |
+          if git diff --quiet -- pluginmaster.json plugins/RotationSolver/latest.zip; then
+            echo "No upstream update."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pluginmaster.json plugins/RotationSolver/latest.zip
+          git commit -m "Update Rotation Solver localization"
+          git push
