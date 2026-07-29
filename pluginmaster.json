@@ -92,6 +92,6 @@
     "TestingAssemblyVersion": "7.5.5.2",
     "Changelog": "## What's Changed\r\n* Fix load issue by @LTS-FFXIV in https://github.com/FFXIV-CombatReborn/RotationSolverReborn/pull/1322\r\n* Churin Updates v1 by @aventurescence in https://github.com/FFXIV-CombatReborn/RotationSolverReborn/pull/1321\r\n\r\n\r\n**Full Changelog**: https://github.com/FFXIV-CombatReborn/RotationSolverReborn/compare/7.5.5.1...7.5.5.2",
     "DownloadCount": 0,
-    "LastUpdate": 1785332384
+    "LastUpdate": 1785332533
   }
 ]
