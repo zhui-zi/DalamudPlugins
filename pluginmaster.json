@@ -56,5 +56,37 @@
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/PortraitGearSync/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/PortraitGearSync/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/PortraitGearSync/latest.zip"
+  },
+  {
+    "Author": "Faye / NiGuangOwO / Ookura-Risona / zhui-zi",
+    "Name": "BOCCHI North",
+    "InternalName": "BOCCHINorth",
+    "AssemblyVersion": "3.2.0.0",
+    "Description": "BOCCHI North 是可与原版 BOCCHI 同时安装的新月岛助手。\n- 使用独立插件身份、配置和命令。\n- 支持南征之章与北征之章的 FATE、CE 和分歧之塔追踪。\n- 支持事件传送、自动导航、宝箱和胡萝卜雷达。\n- 北征之章暂不启用依赖预计算路径的自动狩猎。",
+    "IconUrl": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/BOCCHINorth/icon.png",
+    "ApplicableVersion": "any",
+    "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
+    "Tags": [
+      "BOCCHI North",
+      "新月岛",
+      "北征之章",
+      "FATE",
+      "CE",
+      "自动导航"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "独立安装的 BOCCHI 新月岛助手，支持南征之章与北征之章。",
+    "AcceptsFeedback": true,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadCount": 0,
+    "LastUpdate": 1785310602,
+    "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/BOCCHINorth/latest.zip",
+    "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/BOCCHINorth/latest.zip",
+    "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/BOCCHINorth/latest.zip"
   }
 ]
