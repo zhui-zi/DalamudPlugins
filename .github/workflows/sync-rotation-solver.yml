@@ -3,6 +3,9 @@ name: Sync Rotation Solver
 on:
   schedule:
     - cron: "17 */6 * * *"
+  repository_dispatch:
+    types:
+      - rotation-solver-release
   workflow_dispatch:
     inputs:
       force:
