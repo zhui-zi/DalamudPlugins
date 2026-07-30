@@ -12,6 +12,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
     private const int RetryDelayMs = 1000;
     private const int MaxAttempts = 30;
     private readonly Dictionary<MapGearsetRule, string> territorySearches = [];
+    private readonly Dictionary<MapGearsetRule, int> manualTerritoryIds = [];
     private const int MaxGearsets = 100;
 
     public MapGearsetFeature()
@@ -24,6 +25,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
         Plugin.ClientState.TerritoryChanged -= OnTerritoryChanged;
         Plugin.Scheduler.Cancel(ScheduleGroup);
         territorySearches.Clear();
+        manualTerritoryIds.Clear();
     }
 
     private void OnTerritoryChanged(uint territory) => ScheduleForTerritory(territory);
@@ -40,7 +42,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
             return;
 
         var rule = Plugin.Config.MapGearset.Rules.Find(
-            item => item.TerritoryId == territory && item.GearsetIndex >= 0);
+            item => item.TerritoryIds.Contains(territory) && item.GearsetIndex >= 0);
         if (rule == null)
             return;
 
@@ -178,6 +180,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
             if (ImGui.SmallButton("移除规则"))
             {
                 territorySearches.Remove(rule);
+                manualTerritoryIds.Remove(rule);
                 Plugin.Config.MapGearset.Rules.RemoveAt(index);
                 Plugin.Config.Save();
                 ImGui.PopID();
@@ -185,10 +188,15 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
             }
 
             DrawTerritorySelector(rule);
-            if (ImGui.SmallButton($"使用当前地图（{Plugin.ClientState.TerritoryType}）"))
+            if (ImGui.SmallButton($"添加当前地图（{Plugin.ClientState.TerritoryType}）"))
             {
-                rule.TerritoryId = Plugin.ClientState.TerritoryType;
-                Plugin.Config.Save();
+                var territory = Plugin.ClientState.TerritoryType;
+                if (territory > 0 && !rule.TerritoryIds.Contains(territory))
+                {
+                    rule.TerritoryIds.Add(territory);
+                    rule.TerritoryIds.Sort();
+                    Plugin.Config.Save();
+                }
             }
 
             DrawGearsetSelector(rule);
@@ -200,7 +208,9 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
         {
             Plugin.Config.MapGearset.Rules.Add(new MapGearsetRule
             {
-                TerritoryId = Plugin.ClientState.TerritoryType,
+                TerritoryIds = Plugin.ClientState.TerritoryType > 0
+                    ? [Plugin.ClientState.TerritoryType]
+                    : [],
             });
             Plugin.Config.Save();
         }
@@ -210,7 +220,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
             ApplyCurrentTerritory();
 
         Plugin.DrawHelp(
-            "同一地图只使用第一条匹配规则；读图、战斗、剧情或任务交互结束后才会切换。");
+            "每条规则可勾选多个地图；同一地图只使用第一条匹配规则。读图、战斗、剧情或任务交互结束后才会切换。");
     }
 
     private void DrawTerritorySelector(MapGearsetRule rule)
@@ -218,7 +228,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
         if (!territorySearches.TryGetValue(rule, out var search))
             search = string.Empty;
 
-        if (!ImGui.BeginCombo("地图", BasicFeatures.GetTerritoryLabel(rule.TerritoryId)))
+        if (!ImGui.BeginCombo("地图", $"已选择 {rule.TerritoryIds.Count} 个地图"))
             return;
 
         ImGui.SetNextItemWidth(320);
@@ -247,25 +257,42 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
                         continue;
                     }
 
-                    var selected = rule.TerritoryId == row.RowId;
-                    if (ImGui.Selectable($"{label}##Territory-{row.RowId}", selected))
-                    {
-                        rule.TerritoryId = row.RowId;
-                        Plugin.Config.Save();
-                    }
+                    var selected = rule.TerritoryIds.Contains(row.RowId);
+                    if (!ImGui.Checkbox($"{label}##Territory-{row.RowId}", ref selected))
+                        continue;
 
                     if (selected)
-                        ImGui.SetItemDefaultFocus();
+                        rule.TerritoryIds.Add(row.RowId);
+                    else
+                        rule.TerritoryIds.Remove(row.RowId);
+                    rule.TerritoryIds.Sort();
+                    Plugin.Config.Save();
                 }
             }
             ImGui.EndChild();
         }
 
         ImGui.Separator();
-        var territory = (int)rule.TerritoryId;
-        if (ImGui.InputInt("手动输入地图 ID", ref territory))
+        if (!manualTerritoryIds.TryGetValue(rule, out var manualTerritory))
+            manualTerritory = 0;
+        ImGui.SetNextItemWidth(180);
+        if (ImGui.InputInt("手动添加地图 ID", ref manualTerritory))
+            manualTerritoryIds[rule] = Math.Max(0, manualTerritory);
+        ImGui.SameLine();
+        if (ImGui.SmallButton("添加 ID") &&
+            manualTerritory > 0 &&
+            !rule.TerritoryIds.Contains((uint)manualTerritory))
         {
-            rule.TerritoryId = (uint)Math.Max(0, territory);
+            rule.TerritoryIds.Add((uint)manualTerritory);
+            rule.TerritoryIds.Sort();
+            manualTerritoryIds[rule] = 0;
+            Plugin.Config.Save();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton("清空已选地图"))
+        {
+            rule.TerritoryIds.Clear();
             Plugin.Config.Save();
         }
 

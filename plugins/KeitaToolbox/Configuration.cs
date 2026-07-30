@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Configuration;
 using Dalamud.Game.Text;
 using Dalamud.Plugin;
@@ -9,7 +10,7 @@ namespace KeitaToolbox;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
     public bool ProtectedFeaturesUnlocked { get; set; }
 
     public FeatureSwitches Features { get; set; } = new();
@@ -30,6 +31,45 @@ public sealed class Configuration : IPluginConfiguration
     public void Initialize(IDalamudPluginInterface value) => pluginInterface = value;
 
     public void Save() => pluginInterface?.SavePluginConfig(this);
+
+    public bool Migrate()
+    {
+        var changed = false;
+        foreach (var rule in MapGearset.Rules)
+        {
+            rule.TerritoryIds ??= [];
+            if (rule.TerritoryId > 0 && !rule.TerritoryIds.Contains(rule.TerritoryId))
+            {
+                rule.TerritoryIds.Add(rule.TerritoryId);
+                changed = true;
+            }
+
+            var normalized = rule.TerritoryIds
+                .Where(id => id > 0)
+                .Distinct()
+                .Order()
+                .ToList();
+            if (!rule.TerritoryIds.SequenceEqual(normalized))
+            {
+                rule.TerritoryIds = normalized;
+                changed = true;
+            }
+
+            if (rule.TerritoryId != 0)
+            {
+                rule.TerritoryId = 0;
+                changed = true;
+            }
+        }
+
+        if (Version < 2)
+        {
+            Version = 2;
+            changed = true;
+        }
+
+        return changed;
+    }
 }
 
 [Serializable]
@@ -164,6 +204,10 @@ public sealed class MapGearsetSettings
 [Serializable]
 public sealed class MapGearsetRule
 {
+    public List<uint> TerritoryIds { get; set; } = [];
+
+    // Retained only to migrate configurations saved before version 2.
     public uint TerritoryId { get; set; }
+
     public int GearsetIndex { get; set; } = -1;
 }

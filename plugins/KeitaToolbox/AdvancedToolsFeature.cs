@@ -266,7 +266,7 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         if (mouseTeleportArmed)
             ImGui.TextColored(new Vector4(0.35f, 0.85f, 1f, 1f), "选点中：左键传送，右键取消。");
         else
-            ImGui.TextDisabled("点击按钮或使用 /ktb mouse，然后在游戏地面左键选点。");
+            ImGui.TextDisabled("按钮：点击后左键选点。指令：/ktb mouse 立即传送到当前鼠标位置。");
 
         if (ImGui.Button("传送到地图旗标"))
             TeleportToFlag();
@@ -514,6 +514,39 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         mouseTeleportArmed = true;
         mouseTeleportClickReleased = false;
         Plugin.Chat.Print("[Keita 工具箱] 请在游戏地面左键选择传送位置，右键取消。");
+    }
+
+    public void TeleportToMouse()
+    {
+        if (!Plugin.ProtectedFeaturesUnlocked)
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 请先解锁受保护的高级工具。");
+            return;
+        }
+
+        if (!Plugin.Config.Features.AdvancedTools)
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 请先启用高级移动工具。");
+            return;
+        }
+
+        var localPlayer = Plugin.ObjectTable.LocalPlayer;
+        if (localPlayer == null)
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 当前无法读取角色位置。");
+            return;
+        }
+
+        var position = Vector3.Zero;
+        if (!Plugin.GameGui.ScreenToWorld(ImGui.GetIO().MousePos, out position, 100000f))
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 当前鼠标位置没有可传送的地面。");
+            return;
+        }
+
+        ((GameObject*)localPlayer.Address)->SetPosition(position.X, position.Y, position.Z);
+        Plugin.Chat.Print($"[Keita 工具箱] 已传送到 {position.X:F1}, {position.Y:F1}, {position.Z:F1}。");
+        Debug($"Teleported directly to mouse position {position}.");
     }
 
     public void UpdateMouseTeleport()

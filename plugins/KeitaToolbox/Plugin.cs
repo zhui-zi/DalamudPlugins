@@ -66,6 +66,8 @@ public sealed class Plugin : IDalamudPlugin
     {
         Config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Config.Initialize(PluginInterface);
+        if (Config.Migrate())
+            Config.Save();
 
         basicFeatures = CreateFeature("general tools", () => new BasicFeatures());
         autoInviteFeature = CreateFeature("automatic party invite", () => new AutoInviteFeature());
@@ -158,7 +160,7 @@ public sealed class Plugin : IDalamudPlugin
             if (advancedToolsFeature == null)
                 Chat.PrintError("[Keita 工具箱] 鼠标位置传送当前不可用。");
             else
-                advancedToolsFeature.ArmMouseTeleport();
+                advancedToolsFeature.TeleportToMouse();
             return;
         }
 
