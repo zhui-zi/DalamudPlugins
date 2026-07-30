@@ -19,8 +19,6 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
     private const uint NorthHornTerritoryId = 1346;
     private const uint PhantomChemistReviveActionId = 41634;
     private const uint PhantomWhiteMageReviveActionId = 49070;
-    private const uint PhantomChemistReviveGeneralActionId = 33;
-    private const uint PhantomWhiteMageReviveGeneralActionId = 34;
     private const byte PhantomChemistJobId = 10;
     private const byte PhantomWhiteMageJobId = 17;
     private const uint PhantomChemistStatusId = 4367;
@@ -110,7 +108,6 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
 
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
         var reviveActionRowId = ResolveReviveAction(localPlayer);
-        var reviveGeneralActionId = ResolveReviveGeneralAction(reviveActionRowId);
         if (localPlayer is not { IsDead: false })
         {
             runtimeStatus = "玩家不可用或已倒地。";
@@ -118,7 +115,7 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
             return;
         }
 
-        if (reviveGeneralActionId == 0)
+        if (reviveActionRowId == 0)
         {
             runtimeStatus = "当前辅助职业不是辅助药剂师或辅助白魔法师。";
             ResetTransientState();
@@ -167,11 +164,11 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
             if (actionManager != null &&
                 target != null &&
                 actionManager->UseAction(
-                    ActionType.GeneralAction,
-                    reviveGeneralActionId,
+                    ActionType.Action,
+                    reviveActionRowId,
                     pending.EntityId))
             {
-                runtimeStatus = $"已请求复活 {pending.Name}。";
+                runtimeStatus = $"客户端已接受对 {pending.Name} 的复活请求，等待服务端效果。";
                 confirmingTargetEntityId = pending.EntityId;
                 confirmingTargetName = pending.Name.ToString();
                 confirmUntil = now + ConfirmationTimeoutMs;
@@ -183,9 +180,9 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
             if (now >= nextFailureLogAt)
             {
                 Plugin.Log.Warning(
-                    "Auto revive request rejected. Target={Target}, GeneralAction={ActionId}",
+                    "Auto revive request rejected. Target={Target}, Action={ActionId}",
                     pending.Name,
-                    reviveGeneralActionId);
+                    reviveActionRowId);
                 nextFailureLogAt = now + FailureLogIntervalMs;
             }
             reviveAt = now + ReviveDelayMs;
@@ -311,14 +308,6 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
 
         return 0;
     }
-
-    private static uint ResolveReviveGeneralAction(uint actionRowId) =>
-        actionRowId switch
-        {
-            PhantomChemistReviveActionId => PhantomChemistReviveGeneralActionId,
-            PhantomWhiteMageReviveActionId => PhantomWhiteMageReviveGeneralActionId,
-            _ => 0u,
-        };
 
     private static bool IsReviveActionUnlocked(uint actionId)
     {
