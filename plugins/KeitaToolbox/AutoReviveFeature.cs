@@ -161,9 +161,28 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
 
             var actionManager = ActionManager.Instance();
             var target = (ClientGameObject*)pending.Address;
-            if (actionManager != null &&
-                target != null &&
-                actionManager->UseAction(
+            if (actionManager == null || target == null)
+            {
+                runtimeStatus = $"无法读取 {pending.Name} 的游戏对象，将重试。";
+                reviveAt = now + ReviveDelayMs;
+                return;
+            }
+
+            if (!ActionManager.CanUseActionOnTarget(reviveActionRowId, target))
+            {
+                runtimeStatus = $"当前无法对 {pending.Name} 使用复活，将重试。";
+                reviveAt = now + ReviveDelayMs;
+                return;
+            }
+
+            if (!actionManager->IsActionOffCooldown(ActionType.Action, reviveActionRowId))
+            {
+                runtimeStatus = "复活技能冷却中。";
+                reviveAt = now + ReviveDelayMs;
+                return;
+            }
+
+            if (actionManager->UseAction(
                     ActionType.Action,
                     reviveActionRowId,
                     pending.EntityId))
