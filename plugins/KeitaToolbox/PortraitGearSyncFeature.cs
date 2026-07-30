@@ -88,7 +88,9 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
             Plugin.Config.Features.PortraitGearSync &&
             !internalGearsetUpdate &&
             gearsetId == module->CurrentGearsetIndex &&
-            (settings.ReequipLinkedGlamourPlate || settings.UpdatePortraitOnGearsetUpdate);
+            (settings.ReequipLinkedGlamourPlate ||
+             settings.UpdatePortraitOnGearsetUpdate ||
+             settings.UpdateSharedPortraitsAfterGlamourPlate);
 
         if (shouldSync)
             BlockAutomaticPreview();
@@ -258,7 +260,17 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
         }
 
         if (SyncCurrentPortrait(module, gearsetId))
+        {
+            if (Plugin.Config.Portrait.UpdateSharedPortraitsAfterGlamourPlate)
+            {
+                var excludedGearsetId =
+                    Plugin.Config.Portrait.UpdatePortraitOnGearsetUpdate
+                        ? gearsetId
+                        : -1;
+                UpdateAllStoredPortraitChecksums(module, excludedGearsetId);
+            }
             Finish();
+        }
     }
 
     private void ProcessGlamourPlateApplication(
@@ -280,18 +292,19 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
             ? ApplySharedGearsetAppearances(module, currentGearsetId, sharedSlots)
             : [];
 
-        if (settings.UpdateSharedPortraitsAfterGlamourPlate)
-        {
-            foreach (var gearsetId in GetDistinctGearsetIds(sharedSlots))
-                UpdateStoredPortraitChecksum(module, gearsetId);
-        }
-
         if (settings.SyncAfterGlamourPlate)
         {
             var gearset = module->GetGearset(currentGearsetId);
             var banner = gearset == null ? null : gearset->GetBanner();
             if (banner != null && !SendPortraitUpdate(banner))
                 Plugin.Log.Warning("The current instant portrait could not be updated.");
+        }
+
+        if (settings.UpdateSharedPortraitsAfterGlamourPlate)
+        {
+            UpdateAllStoredPortraitChecksums(
+                module,
+                settings.SyncAfterGlamourPlate ? currentGearsetId : -1);
         }
 
         Plugin.Log.Information(
@@ -463,13 +476,27 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
         return [.. changedGearsets];
     }
 
-    private static List<int> GetDistinctGearsetIds(
-        IReadOnlyList<SharedGearsetSlot> sharedSlots)
+    private static int UpdateAllStoredPortraitChecksums(
+        RaptureGearsetModule* module,
+        int excludedGearsetId)
     {
-        var result = new HashSet<int>();
-        foreach (var match in sharedSlots)
-            result.Add(match.GearsetId);
-        return [.. result];
+        var updated = 0;
+        for (var gearsetId = 0; gearsetId < 100; gearsetId++)
+        {
+            if (gearsetId == excludedGearsetId ||
+                !module->IsValidGearset(gearsetId))
+            {
+                continue;
+            }
+
+            if (UpdateStoredPortraitChecksum(module, gearsetId))
+                updated++;
+        }
+
+        Plugin.Log.Information(
+            "Updated stored portrait gear data for {Count} gearsets.",
+            updated);
+        return updated;
     }
 
     private static bool UpdateStoredPortraitChecksum(
@@ -653,12 +680,12 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
             Plugin.Config.Portrait.SyncSharedGearsetsAfterGlamourPlate,
             value => Plugin.Config.Portrait.SyncSharedGearsetsAfterGlamourPlate = value);
         DrawOption(
-            "更新共用装备套装保存的肖像",
+            "自动更新所有装备套装保存的肖像",
             Plugin.Config.Portrait.UpdateSharedPortraitsAfterGlamourPlate,
             value => Plugin.Config.Portrait.UpdateSharedPortraitsAfterGlamourPlate = value);
 
         Plugin.DrawHelp(
-            "共用装备套装会直接更新，无需切换职业或装备其他套装。");
+            "当前套装会正常发送即时肖像更新；其他套装会直接刷新保存的肖像装备数据，无需切换职业或逐一装备。");
     }
 
     private static void DrawOption(string label, bool value, Action<bool> setter)

@@ -88,6 +88,9 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
     private nint diveTeleportContext;
     private bool mouseTeleportArmed;
     private bool mouseTeleportClickReleased;
+    private long suppressInvincibilityDiveUntil;
+    private CharacterModes invincibilityOriginalMode;
+    private byte invincibilityOriginalModeParam;
 
     public AdvancedToolsFeature()
     {
@@ -554,6 +557,8 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
 
     public void UpdateMouseTeleport()
     {
+        SuppressInvincibilityDiveAnimation();
+
         if (!mouseTeleportArmed)
             return;
 
@@ -648,7 +653,44 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             return;
         }
 
+        var character = (Character*)localPlayer.Address;
+        if (character != null &&
+            character->Mode != CharacterModes.Mounted &&
+            !Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted] &&
+            !Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] &&
+            !Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Swimming] &&
+            !Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Diving])
+        {
+            invincibilityOriginalMode = character->Mode;
+            invincibilityOriginalModeParam = character->ModeParam;
+            suppressInvincibilityDiveUntil = Environment.TickCount64 + 1000;
+        }
+
         SendDiveTeleport(localPlayer.Position);
+        SuppressInvincibilityDiveAnimation();
+    }
+
+    private void SuppressInvincibilityDiveAnimation()
+    {
+        if (suppressInvincibilityDiveUntil == 0)
+            return;
+
+        if (Environment.TickCount64 > suppressInvincibilityDiveUntil)
+        {
+            suppressInvincibilityDiveUntil = 0;
+            return;
+        }
+
+        var localPlayer = Plugin.ObjectTable.LocalPlayer;
+        if (localPlayer == null)
+        {
+            suppressInvincibilityDiveUntil = 0;
+            return;
+        }
+
+        var character = (Character*)localPlayer.Address;
+        if (character != null && character->Mode == CharacterModes.Mounted)
+            character->SetMode(invincibilityOriginalMode, invincibilityOriginalModeParam);
     }
 
     private void SendDiveTeleport(Vector3 position)
