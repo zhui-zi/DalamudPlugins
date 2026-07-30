@@ -40,6 +40,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IGameInteropProvider Interop { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static INotificationManager Notifications { get; private set; } = null!;
+    [PluginService] internal static IUnlockState UnlockState { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
     internal static Configuration Config { get; private set; } = null!;
@@ -53,6 +54,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly PortraitGearSyncFeature? portraitFeature;
     private readonly AdvancedToolsFeature? advancedToolsFeature;
     private readonly MapGearsetFeature? mapGearsetFeature;
+    private readonly AutoReviveFeature? autoReviveFeature;
     private readonly HttpClient unlockClient = new()
     {
         Timeout = TimeSpan.FromSeconds(10),
@@ -84,6 +86,9 @@ public sealed class Plugin : IDalamudPlugin
         mapGearsetFeature = CreateFeature(
             "automatic map gearset switch",
             () => new MapGearsetFeature());
+        autoReviveFeature = CreateFeature(
+            "Occult Crescent auto revive",
+            () => new AutoReviveFeature());
 
         Framework.Update += OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw += DrawWindow;
@@ -111,6 +116,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= DrawWindow;
         Framework.Update -= OnFrameworkUpdate;
 
+        autoReviveFeature?.Dispose();
         mapGearsetFeature?.Dispose();
         advancedToolsFeature?.Dispose();
         portraitFeature?.Dispose();
@@ -230,6 +236,13 @@ public sealed class Plugin : IDalamudPlugin
                     DrawUnavailable("肖像与装备套装同步");
                 else
                     portraitFeature.DrawSettings();
+            });
+            DrawTab("新月岛", () =>
+            {
+                if (autoReviveFeature == null)
+                    DrawUnavailable("自动复活");
+                else
+                    autoReviveFeature.DrawSettings();
             });
             ImGui.EndTabBar();
         }

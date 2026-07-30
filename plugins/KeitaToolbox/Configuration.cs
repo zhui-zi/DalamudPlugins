@@ -24,6 +24,7 @@ public sealed class Configuration : IPluginConfiguration
     public AdvancedToolsSettings Advanced { get; set; } = new();
     public CombatUtilitySettings CombatUtilities { get; set; } = new();
     public MapGearsetSettings MapGearset { get; set; } = new();
+    public OccultPotSettings OccultPot { get; set; } = new();
 
     [NonSerialized]
     private IDalamudPluginInterface? pluginInterface;
@@ -91,6 +92,7 @@ public sealed class FeatureSwitches
     public bool StatusBlock { get; set; }
     public bool FrontlineRemoteInteraction { get; set; }
     public bool MapGearsetSwitch { get; set; }
+    public bool OccultPotAutoRevive { get; set; }
 }
 
 [Serializable]
@@ -199,6 +201,12 @@ public sealed class MapGearsetSettings
     public int DelayMs { get; set; } = 2000;
     public bool PrintChatMessage { get; set; }
     public List<MapGearsetRule> Rules { get; set; } = [];
+}
+
+[Serializable]
+public sealed class OccultPotSettings
+{
+    public bool AutoRevivePartyOnly { get; set; } = true;
 }
 
 [Serializable]
