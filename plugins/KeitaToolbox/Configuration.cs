@@ -20,8 +20,8 @@ public sealed class Configuration : IPluginConfiguration
     public PartyFinderSettings PartyFinder { get; set; } = new();
     public PluginSwitcherSettings PluginSwitcher { get; set; } = new();
     public PortraitSettings Portrait { get; set; } = new();
-    public AyanoSettings Ayano { get; set; } = new();
-    public IChingSettings IChing { get; set; } = new();
+    public AdvancedToolsSettings Advanced { get; set; } = new();
+    public CombatUtilitySettings CombatUtilities { get; set; } = new();
     public MapGearsetSettings MapGearset { get; set; } = new();
 
     [NonSerialized]
@@ -45,7 +45,7 @@ public sealed class FeatureSwitches
     public bool PartyFinderDutyFilter { get; set; }
     public bool PvpPluginSwitcher { get; set; }
     public bool PortraitGearSync { get; set; }
-    public bool AyanoHimituBox { get; set; }
+    public bool AdvancedTools { get; set; }
     public bool InstantReturn { get; set; }
     public bool IgnoreCharmAndFear { get; set; }
     public bool StatusBlock { get; set; }
@@ -130,7 +130,7 @@ public sealed class PortraitSettings
 }
 
 [Serializable]
-public sealed class AyanoSettings
+public sealed class AdvancedToolsSettings
 {
     public bool SpeedHack { get; set; }
     public float SpeedValue { get; set; } = 0.17f;
@@ -148,7 +148,7 @@ public sealed class AyanoSettings
 }
 
 [Serializable]
-public sealed class IChingSettings
+public sealed class CombatUtilitySettings
 {
     public float FrontlineRangeBonus { get; set; } = 40f;
 }

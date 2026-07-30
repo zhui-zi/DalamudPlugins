@@ -100,7 +100,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
         if (Plugin.Config.MapGearset.PrintChatMessage)
         {
             Plugin.Chat.Print(
-                $"[Keita Toolbox] Switched to gearset #{gearset->Id + 1}: {gearset->NameString}");
+                $"[Keita 工具箱] 已切换到装备套装 #{gearset->Id + 1}：{gearset->NameString}");
         }
     }
 
@@ -136,11 +136,11 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
 
     public void DrawSettings()
     {
-        if (!ImGui.CollapsingHeader("Automatic map gearset switch"))
+        if (!ImGui.CollapsingHeader("按地图自动切换装备套装"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "automatic map gearset switch",
+            "按地图自动切换装备套装",
             Plugin.Config.Features.MapGearsetSwitch,
             value =>
             {
@@ -152,14 +152,14 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
             });
 
         var delay = Plugin.Config.MapGearset.DelayMs;
-        if (ImGui.InputInt("Switch delay (ms)", ref delay))
+        if (ImGui.InputInt("切换延迟（毫秒）", ref delay))
         {
             Plugin.Config.MapGearset.DelayMs = Math.Max(0, delay);
             Plugin.Config.Save();
         }
 
         var printMessage = Plugin.Config.MapGearset.PrintChatMessage;
-        if (ImGui.Checkbox("Print a chat message after switching", ref printMessage))
+        if (ImGui.Checkbox("切换后在聊天栏提示", ref printMessage))
         {
             Plugin.Config.MapGearset.PrintChatMessage = printMessage;
             Plugin.Config.Save();
@@ -170,9 +170,9 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
         {
             var rule = Plugin.Config.MapGearset.Rules[index];
             ImGui.PushID(index);
-            ImGui.TextUnformatted($"Map rule {index + 1}");
+            ImGui.TextUnformatted($"地图规则 {index + 1}");
             ImGui.SameLine();
-            if (ImGui.SmallButton("Remove rule"))
+            if (ImGui.SmallButton("移除规则"))
             {
                 Plugin.Config.MapGearset.Rules.RemoveAt(index);
                 Plugin.Config.Save();
@@ -181,13 +181,13 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
             }
 
             var territory = (int)rule.TerritoryId;
-            if (ImGui.InputInt("Territory ID", ref territory))
+            if (ImGui.InputInt("地图 ID", ref territory))
             {
                 rule.TerritoryId = (uint)Math.Max(0, territory);
                 Plugin.Config.Save();
             }
             ImGui.SameLine();
-            if (ImGui.SmallButton($"Use current ({Plugin.ClientState.TerritoryType})"))
+            if (ImGui.SmallButton($"使用当前地图（{Plugin.ClientState.TerritoryType}）"))
             {
                 rule.TerritoryId = Plugin.ClientState.TerritoryType;
                 Plugin.Config.Save();
@@ -198,7 +198,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
             ImGui.PopID();
         }
 
-        if (ImGui.Button("Add map rule"))
+        if (ImGui.Button("添加地图规则"))
         {
             Plugin.Config.MapGearset.Rules.Add(new MapGearsetRule
             {
@@ -208,17 +208,17 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
         }
 
         ImGui.SameLine();
-        if (ImGui.Button("Apply current map now"))
+        if (ImGui.Button("立即应用当前地图规则"))
             ApplyCurrentTerritory();
 
         Plugin.DrawHelp(
-            "The first matching rule is used. Switching waits until loading, combat, cutscenes, and quest events have ended.");
+            "同一地图只使用第一条匹配规则；读图、战斗、剧情或任务交互结束后才会切换。");
     }
 
     private static void DrawGearsetSelector(MapGearsetRule rule)
     {
         var preview = GetGearsetLabel(rule.GearsetIndex);
-        if (!ImGui.BeginCombo("Gearset", preview))
+        if (!ImGui.BeginCombo("装备套装", preview))
             return;
 
         var module = RaptureGearsetModule.Instance();
@@ -251,12 +251,12 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
             index is < 0 or >= MaxGearsets ||
             !module->IsValidGearset(index))
         {
-            return "Select a gearset";
+            return "请选择装备套装";
         }
 
         var gearset = module->GetGearset(index);
         return gearset == null
-            ? "Select a gearset"
+            ? "请选择装备套装"
             : $"#{gearset->Id + 1} {gearset->NameString}";
     }
 }

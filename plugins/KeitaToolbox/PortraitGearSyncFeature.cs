@@ -620,45 +620,45 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
 
     public void DrawSettings()
     {
-        if (!ImGui.CollapsingHeader("Portrait and gearset synchronization"))
+        if (!ImGui.CollapsingHeader("肖像与装备套装同步"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "portrait gear synchronization",
+            "肖像与装备套装同步",
             Plugin.Config.Features.PortraitGearSync,
             value => Plugin.Config.Features.PortraitGearSync = value);
 
         DrawOption(
-            "Reapply the linked glamour plate after a gearset update",
+            "装备套装更新后重新应用关联的投影模板",
             Plugin.Config.Portrait.ReequipLinkedGlamourPlate,
             value => Plugin.Config.Portrait.ReequipLinkedGlamourPlate = value);
         DrawOption(
-            "Update the current instant portrait after a gearset update",
+            "装备套装更新后同步当前即时肖像",
             Plugin.Config.Portrait.UpdatePortraitOnGearsetUpdate,
             value => Plugin.Config.Portrait.UpdatePortraitOnGearsetUpdate = value);
         DrawOption(
-            "Synchronize headgear visibility and visor changes",
+            "同步头部装备显示和面罩状态",
             Plugin.Config.Portrait.SyncHeadgearChanges,
             value => Plugin.Config.Portrait.SyncHeadgearChanges = value);
         DrawOption(
-            "Synchronize recommended gear changes",
+            "同步最强装备变更",
             Plugin.Config.Portrait.SyncRecommendedGear,
             value => Plugin.Config.Portrait.SyncRecommendedGear = value);
         DrawOption(
-            "Synchronize the current gearset and portrait after a glamour plate",
+            "应用投影模板后同步当前装备套装与肖像",
             Plugin.Config.Portrait.SyncAfterGlamourPlate,
             value => Plugin.Config.Portrait.SyncAfterGlamourPlate = value);
         DrawOption(
-            "Update all gearsets sharing the same physical items",
+            "更新所有共用相同实际装备的套装",
             Plugin.Config.Portrait.SyncSharedGearsetsAfterGlamourPlate,
             value => Plugin.Config.Portrait.SyncSharedGearsetsAfterGlamourPlate = value);
         DrawOption(
-            "Update stored portraits for shared gearsets",
+            "更新共用装备套装保存的肖像",
             Plugin.Config.Portrait.UpdateSharedPortraitsAfterGlamourPlate,
             value => Plugin.Config.Portrait.UpdateSharedPortraitsAfterGlamourPlate = value);
 
         Plugin.DrawHelp(
-            "Shared gearsets are updated in place without switching jobs or equipping another gearset.");
+            "共用装备套装会直接更新，无需切换职业或装备其他套装。");
     }
 
     private static void DrawOption(string label, bool value, Action<bool> setter)

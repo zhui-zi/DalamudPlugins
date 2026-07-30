@@ -1,8 +1,8 @@
 {
   "Author": "zhui-zi",
-  "Name": "Keita Toolbox",
-  "Punchline": "A unified collection of FFXIV quality-of-life tools.",
-  "Description": "Combines duty automation, recruitment tools, plugin and map gearset switching, trade protection, IME cleanup, portrait synchronization, Ayano tools, and I-Ching utilities.",
+  "Name": "Keita 工具箱",
+  "Punchline": "统一整合多种 FFXIV 实用功能。",
+  "Description": "提供任务与招募自动化、插件及地图套装切换、交易保护、输入法清理、肖像同步以及高级移动和战斗辅助功能。",
   "ApplicableVersion": "any",
   "Tags": [
     "utility",

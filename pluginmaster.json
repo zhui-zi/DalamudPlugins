@@ -1,10 +1,10 @@
 [
   {
     "Author": "zhui-zi",
-    "Name": "Keita Toolbox",
+    "Name": "Keita 工具箱",
     "InternalName": "KeitaToolbox",
-    "AssemblyVersion": "1.4.0.0",
-    "Description": "Combines duty automation, recruitment tools, plugin and map gearset switching, trade protection, IME cleanup, portrait synchronization, Ayano tools, and I-Ching utilities.",
+    "AssemblyVersion": "1.4.0.2",
+    "Description": "提供任务与招募自动化、插件及地图套装切换、交易保护、输入法清理、肖像同步以及高级移动和战斗辅助功能。",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
     "Tags": [
@@ -19,12 +19,12 @@
     "LoadSync": false,
     "CanUnloadAsync": false,
     "LoadPriority": 0,
-    "Punchline": "A unified collection of FFXIV quality-of-life tools.",
+    "Punchline": "统一整合多种 FFXIV 实用功能。",
     "AcceptsFeedback": true,
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1785408675,
+    "LastUpdate": 1785409419,
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip"

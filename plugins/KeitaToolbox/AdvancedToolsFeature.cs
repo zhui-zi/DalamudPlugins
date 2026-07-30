@@ -12,7 +12,7 @@ using LuminaAction = Lumina.Excel.Sheets.Action;
 
 namespace KeitaToolbox;
 
-internal sealed unsafe class AyanoHimituFeature : IDisposable
+internal sealed unsafe class AdvancedToolsFeature : IDisposable
 {
     private const string SpeedSignature =
         "40 ?? 48 ?? ?? ?? 48 ?? ?? 48 ?? ?? ?? 48 ?? ?? FF 90 ?? ?? ?? ?? 48 ?? ?? 75 ?? F3 ?? ?? ?? ?? ?? ?? ??";
@@ -87,7 +87,7 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
     private readonly Hook<StatusPacketDelegate>? statusPacketHook;
     private nint diveTeleportContext;
 
-    public AyanoHimituFeature()
+    public AdvancedToolsFeature()
     {
         foreach (var action in Plugin.Data.GetExcelSheet<LuminaAction>())
         {
@@ -158,171 +158,171 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
 
     public void DrawSettings()
     {
-        if (!ImGui.CollapsingHeader("Ayano Himitu Box"))
+        if (!ImGui.CollapsingHeader("高级移动工具"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "Ayano Himitu Box functions",
-            Plugin.Config.Features.AyanoHimituBox,
+            "高级移动工具",
+            Plugin.Config.Features.AdvancedTools,
             value =>
             {
-                Plugin.Config.Features.AyanoHimituBox = value;
+                Plugin.Config.Features.AdvancedTools = value;
                 UpdateHookStates();
             });
         Plugin.DrawHelp(
-            "These functions alter client behavior. Disable the original AyanoHimituBox plugin before enabling them.");
+            "这些功能会改变客户端的移动与动作行为。");
 
         DrawToggle(
-            "Movement speed",
-            Plugin.Config.Ayano.SpeedHack,
-            value => Plugin.Config.Ayano.SpeedHack = value);
-        if (Plugin.Config.Ayano.SpeedHack)
+            "移动速度",
+            Plugin.Config.Advanced.SpeedHack,
+            value => Plugin.Config.Advanced.SpeedHack = value);
+        if (Plugin.Config.Advanced.SpeedHack)
         {
-            var value = Plugin.Config.Ayano.SpeedValue;
-            if (ImGui.DragFloat("Speed bonus", ref value, 0.01f, 0f, 1f, "%.2f"))
+            var value = Plugin.Config.Advanced.SpeedValue;
+            if (ImGui.DragFloat("速度加成", ref value, 0.01f, 0f, 1f, "%.2f"))
             {
-                Plugin.Config.Ayano.SpeedValue = Math.Clamp(value, 0f, 1f);
+                Plugin.Config.Advanced.SpeedValue = Math.Clamp(value, 0f, 1f);
                 Plugin.Config.Save();
             }
         }
 
         DrawToggle(
-            "Move during restricted actions",
-            Plugin.Config.Ayano.MovePermission,
-            value => Plugin.Config.Ayano.MovePermission = value);
+            "受限动作期间允许移动",
+            Plugin.Config.Advanced.MovePermission,
+            value => Plugin.Config.Advanced.MovePermission = value);
         DrawToggle(
-            "Move immediately after actions",
-            Plugin.Config.Ayano.SkillPostActionMove,
-            value => Plugin.Config.Ayano.SkillPostActionMove = value);
+            "动作结束后立即移动",
+            Plugin.Config.Advanced.SkillPostActionMove,
+            value => Plugin.Config.Advanced.SkillPostActionMove = value);
         DrawToggle(
-            "Extended action range",
-            Plugin.Config.Ayano.ActionRange,
-            value => Plugin.Config.Ayano.ActionRange = value);
-        if (Plugin.Config.Ayano.ActionRange)
+            "延长技能距离",
+            Plugin.Config.Advanced.ActionRange,
+            value => Plugin.Config.Advanced.ActionRange = value);
+        if (Plugin.Config.Advanced.ActionRange)
         {
-            var value = Plugin.Config.Ayano.ActionRangeValue;
-            if (ImGui.DragFloat("Action range bonus", ref value, 0.1f, 0f, 3f, "%.1f"))
+            var value = Plugin.Config.Advanced.ActionRangeValue;
+            if (ImGui.DragFloat("技能距离加成", ref value, 0.1f, 0f, 3f, "%.1f"))
             {
-                Plugin.Config.Ayano.ActionRangeValue = Math.Clamp(value, 0f, 3f);
+                Plugin.Config.Advanced.ActionRangeValue = Math.Clamp(value, 0f, 3f);
                 Plugin.Config.Save();
             }
         }
 
         DrawToggle(
-            "Gap-closer range bypass",
-            Plugin.Config.Ayano.GapCloserRange,
-            value => Plugin.Config.Ayano.GapCloserRange = value);
+            "扩展突进技能距离",
+            Plugin.Config.Advanced.GapCloserRange,
+            value => Plugin.Config.Advanced.GapCloserRange = value);
         DrawToggle(
-            "Self-resurrect suppression",
-            Plugin.Config.Ayano.SelfResurrect,
-            value => Plugin.Config.Ayano.SelfResurrect = value);
+            "自我复活抑制",
+            Plugin.Config.Advanced.SelfResurrect,
+            value => Plugin.Config.Advanced.SelfResurrect = value);
         DrawToggle(
-            "Fall protection",
-            Plugin.Config.Ayano.NoFall,
-            value => Plugin.Config.Ayano.NoFall = value);
+            "防坠落",
+            Plugin.Config.Advanced.NoFall,
+            value => Plugin.Config.Advanced.NoFall = value);
         DrawToggle(
-            "Anti-knockback",
-            Plugin.Config.Ayano.AntiKnockback,
-            value => Plugin.Config.Ayano.AntiKnockback = value);
+            "防击退",
+            Plugin.Config.Advanced.AntiKnockback,
+            value => Plugin.Config.Advanced.AntiKnockback = value);
 
-        var zOffset = Plugin.Config.Ayano.ZOffset;
-        if (ImGui.Checkbox("Z-axis offset", ref zOffset))
+        var zOffset = Plugin.Config.Advanced.ZOffset;
+        if (ImGui.Checkbox("Z 轴偏移", ref zOffset))
         {
-            if (zOffset && !Plugin.Config.Ayano.ZOffset)
-                Plugin.Config.Ayano.ZOffsetValue = 0f;
-            Plugin.Config.Ayano.ZOffset = zOffset;
+            if (zOffset && !Plugin.Config.Advanced.ZOffset)
+                Plugin.Config.Advanced.ZOffsetValue = 0f;
+            Plugin.Config.Advanced.ZOffset = zOffset;
             Plugin.Config.Save();
         }
 
-        if (Plugin.Config.Ayano.ZOffset)
+        if (Plugin.Config.Advanced.ZOffset)
         {
-            var previous = Plugin.Config.Ayano.ZOffsetValue;
+            var previous = Plugin.Config.Advanced.ZOffsetValue;
             var value = previous;
-            if (ImGui.DragFloat("Z offset", ref value, 0.1f, -10f, 10f, "%.1f"))
+            if (ImGui.DragFloat("Z 轴偏移量", ref value, 0.1f, -10f, 10f, "%.1f"))
             {
                 value = Math.Clamp(value, -10f, 10f);
-                Plugin.Config.Ayano.ZOffsetValue = value;
+                Plugin.Config.Advanced.ZOffsetValue = value;
                 ApplyVerticalOffset(value - previous);
                 Plugin.Config.Save();
             }
         }
 
-        var debug = Plugin.Config.Ayano.DebugLogging;
-        if (ImGui.Checkbox("Debug logging", ref debug))
+        var debug = Plugin.Config.Advanced.DebugLogging;
+        if (ImGui.Checkbox("调试日志", ref debug))
         {
-            Plugin.Config.Ayano.DebugLogging = debug;
+            Plugin.Config.Advanced.DebugLogging = debug;
             Plugin.Config.Save();
         }
 
         ImGui.Separator();
-        if (ImGui.Button("Teleport to mouse", new Vector2(-1f, 0f)))
+        if (ImGui.Button("传送到鼠标位置", new Vector2(-1f, 0f)))
             TeleportToMouse();
 
-        if (ImGui.Button("Teleport to map flag"))
+        if (ImGui.Button("传送到地图旗标"))
             TeleportToFlag();
         ImGui.SameLine();
-        if (ImGui.Button("Trigger invincibility"))
+        if (ImGui.Button("触发无敌"))
             TriggerInvincibility();
 
         if (diveTeleportHook == null)
-            ImGui.TextDisabled("Dive teleport is unavailable for this game build.");
+            ImGui.TextDisabled("当前游戏版本无法使用潜水传送。");
         else if (diveTeleportContext == nint.Zero)
-            ImGui.TextDisabled("Dive teleport is waiting for the game context to initialize.");
+            ImGui.TextDisabled("潜水传送正在等待游戏环境初始化。");
     }
 
-    public void DrawIChingSettings()
+    public void DrawCombatUtilitySettings()
     {
-        if (!ImGui.CollapsingHeader("I-Ching tools"))
+        if (!ImGui.CollapsingHeader("战斗辅助"))
             return;
 
         var ignoreCharm = Plugin.Config.Features.IgnoreCharmAndFear;
         if (Plugin.DrawFeatureToggle(
-                "ignore charm and fear",
+                "无视魅惑与恐惧",
                 ignoreCharm,
                 value => Plugin.Config.Features.IgnoreCharmAndFear = value))
         {
             UpdateHookStates();
         }
-        Plugin.DrawHelp("Blocks the forced-action handler used by I-Ching's charm and fear bypass.");
+        Plugin.DrawHelp("阻止魅惑和恐惧状态造成的强制移动。");
 
         var statusBlock = Plugin.Config.Features.StatusBlock;
         if (Plugin.DrawFeatureToggle(
-                "status block (sliding)",
+                "状态屏蔽（滑冰）",
                 statusBlock,
                 value => Plugin.Config.Features.StatusBlock = value))
         {
             UpdateHookStates();
         }
-        Plugin.DrawHelp("Filters I-Ching's fixed status list from both local and network status updates.");
+        Plugin.DrawHelp("从本地和网络状态更新中过滤指定的移动状态。");
 
         var remoteInteraction = Plugin.Config.Features.FrontlineRemoteInteraction;
         if (Plugin.DrawFeatureToggle(
-                "Frontline remote interaction",
+                "战场远程摸点",
                 remoteInteraction,
                 value => Plugin.Config.Features.FrontlineRemoteInteraction = value))
         {
             UpdateHookStates();
         }
-        Plugin.DrawHelp("Mirrors I-Ching's Set 40 action-range preset and only applies while in PvP.");
+        Plugin.DrawHelp("仅在 PvP 区域内延长交互距离。");
 
-        var range = Plugin.Config.IChing.FrontlineRangeBonus;
-        if (ImGui.DragFloat("Frontline range bonus", ref range, 1f, 0f, 40f, "%.0f"))
+        var range = Plugin.Config.CombatUtilities.FrontlineRangeBonus;
+        if (ImGui.DragFloat("战场距离加成", ref range, 1f, 0f, 40f, "%.0f"))
         {
-            Plugin.Config.IChing.FrontlineRangeBonus = Math.Clamp(range, 0f, 40f);
+            Plugin.Config.CombatUtilities.FrontlineRangeBonus = Math.Clamp(range, 0f, 40f);
             Plugin.Config.Save();
         }
     }
 
-    private static bool Enabled(Func<AyanoSettings, bool> selector) =>
+    private static bool Enabled(Func<AdvancedToolsSettings, bool> selector) =>
         Plugin.ProtectedFeaturesUnlocked &&
-        Plugin.Config.Features.AyanoHimituBox &&
-        selector(Plugin.Config.Ayano);
+        Plugin.Config.Features.AdvancedTools &&
+        selector(Plugin.Config.Advanced);
 
     private float SpeedDetour(nint arg1)
     {
         var original = speedHook!.Original(arg1);
         return Enabled(settings => settings.SpeedHack)
-            ? original + Plugin.Config.Ayano.SpeedValue
+            ? original + Plugin.Config.Advanced.SpeedValue
             : original;
     }
 
@@ -348,20 +348,20 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
         if (Plugin.ProtectedFeaturesUnlocked &&
             Plugin.Config.Features.FrontlineRemoteInteraction &&
             Plugin.ClientState.IsPvP)
-            return original + Plugin.Config.IChing.FrontlineRangeBonus;
+            return original + Plugin.Config.CombatUtilities.FrontlineRangeBonus;
 
         if (Plugin.ProtectedFeaturesUnlocked &&
-            Plugin.Config.Features.AyanoHimituBox &&
-            Plugin.Config.Ayano.GapCloserRange &&
+            Plugin.Config.Features.AdvancedTools &&
+            Plugin.Config.Advanced.GapCloserRange &&
             gapCloserActions.Contains(actionId))
         {
             return original + 25f;
         }
 
         return Plugin.ProtectedFeaturesUnlocked &&
-               Plugin.Config.Features.AyanoHimituBox &&
-               Plugin.Config.Ayano.ActionRange
-            ? original + Plugin.Config.Ayano.ActionRangeValue
+               Plugin.Config.Features.AdvancedTools &&
+               Plugin.Config.Advanced.ActionRange
+            ? original + Plugin.Config.Advanced.ActionRangeValue
             : original;
     }
 
@@ -481,7 +481,7 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
     private void TeleportToMouse()
     {
         if (!Plugin.ProtectedFeaturesUnlocked ||
-            !Plugin.Config.Features.AyanoHimituBox)
+            !Plugin.Config.Features.AdvancedTools)
             return;
 
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
@@ -499,13 +499,13 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
     private void TeleportToFlag()
     {
         if (!Plugin.ProtectedFeaturesUnlocked ||
-            !Plugin.Config.Features.AyanoHimituBox)
+            !Plugin.Config.Features.AdvancedTools)
             return;
 
         var agentMap = AgentMap.Instance();
         if (agentMap == null || agentMap->FlagMarkerCount <= 0)
         {
-            Plugin.Chat.PrintError("[Keita Toolbox] No map flag is available.");
+            Plugin.Chat.PrintError("[Keita 工具箱] 当前没有可用的地图旗标。");
             return;
         }
 
@@ -516,7 +516,7 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
     private void TriggerInvincibility()
     {
         if (!Plugin.ProtectedFeaturesUnlocked ||
-            !Plugin.Config.Features.AyanoHimituBox)
+            !Plugin.Config.Features.AdvancedTools)
             return;
 
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
@@ -528,7 +528,7 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
     {
         if (diveTeleportHook == null || diveTeleportContext == nint.Zero)
         {
-            Plugin.Chat.PrintError("[Keita Toolbox] Dive teleport is not ready.");
+            Plugin.Chat.PrintError("[Keita 工具箱] 潜水传送尚未就绪。");
             return;
         }
 
@@ -547,7 +547,7 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
         catch (Exception ex)
         {
             Plugin.Log.Error(ex, "Dive teleport failed.");
-            Plugin.Chat.PrintError("[Keita Toolbox] Dive teleport failed. Check the Dalamud log.");
+            Plugin.Chat.PrintError("[Keita 工具箱] 潜水传送失败，请检查 Dalamud 日志。");
         }
         finally
         {
@@ -558,7 +558,7 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
     private static void ApplyVerticalOffset(float delta)
     {
         if (!Plugin.ProtectedFeaturesUnlocked ||
-            !Plugin.Config.Features.AyanoHimituBox ||
+            !Plugin.Config.Features.AdvancedTools ||
             Math.Abs(delta) < 0.001f)
             return;
 
@@ -592,7 +592,7 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
         }
         catch (Exception ex)
         {
-            Plugin.Log.Error(ex, "Failed to initialize Ayano function: {Feature}.", name);
+            Plugin.Log.Error(ex, "Failed to initialize advanced function: {Feature}.", name);
             return null;
         }
     }
@@ -600,18 +600,18 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
     private void UpdateHookStates()
     {
         var protectionUnlocked = Plugin.ProtectedFeaturesUnlocked;
-        var ayanoEnabled = protectionUnlocked && Plugin.Config.Features.AyanoHimituBox;
-        SetHookEnabled(speedHook, ayanoEnabled);
-        SetHookEnabled(movePermissionHook, ayanoEnabled);
-        SetHookEnabled(skillPostActionMoveHook, ayanoEnabled);
+        var advancedEnabled = protectionUnlocked && Plugin.Config.Features.AdvancedTools;
+        SetHookEnabled(speedHook, advancedEnabled);
+        SetHookEnabled(movePermissionHook, advancedEnabled);
+        SetHookEnabled(skillPostActionMoveHook, advancedEnabled);
         SetHookEnabled(
             actionRangeHook,
-            ayanoEnabled ||
+            advancedEnabled ||
             (protectionUnlocked && Plugin.Config.Features.FrontlineRemoteInteraction));
-        SetHookEnabled(selfResurrectHook, ayanoEnabled);
-        SetHookEnabled(noFallHook, ayanoEnabled);
-        SetHookEnabled(antiKnockbackHook, ayanoEnabled);
-        SetHookEnabled(diveTeleportHook, ayanoEnabled);
+        SetHookEnabled(selfResurrectHook, advancedEnabled);
+        SetHookEnabled(noFallHook, advancedEnabled);
+        SetHookEnabled(antiKnockbackHook, advancedEnabled);
+        SetHookEnabled(diveTeleportHook, advancedEnabled);
         SetHookEnabled(
             forcedActionHook,
             protectionUnlocked && Plugin.Config.Features.IgnoreCharmAndFear);
@@ -621,7 +621,7 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
         SetHookEnabled(
             statusPacketHook,
             protectionUnlocked && Plugin.Config.Features.StatusBlock);
-        if (!ayanoEnabled)
+        if (!advancedEnabled)
             diveTeleportContext = nint.Zero;
     }
 
@@ -646,7 +646,7 @@ internal sealed unsafe class AyanoHimituFeature : IDisposable
 
     private static void Debug(string message)
     {
-        if (Plugin.Config.Ayano.DebugLogging)
+        if (Plugin.Config.Advanced.DebugLogging)
             Plugin.Log.Debug(message);
     }
 }

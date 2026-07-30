@@ -113,11 +113,11 @@ internal sealed unsafe class AutoLeaveFeature : IDisposable
 
     public void DrawSettings()
     {
-        if (!ImGui.CollapsingHeader("Automatic duty leave"))
+        if (!ImGui.CollapsingHeader("自动退出任务"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "automatic duty leave",
+            "自动退出任务",
             Plugin.Config.Features.AutoLeaveDuty,
             value =>
             {
@@ -127,44 +127,44 @@ internal sealed unsafe class AutoLeaveFeature : IDisposable
             });
 
         var delay = Plugin.Config.Duty.LeaveDelayMs;
-        if (ImGui.InputInt("Leave delay (ms)", ref delay))
+        if (ImGui.InputInt("退出延迟（毫秒）", ref delay))
         {
             Plugin.Config.Duty.LeaveDelayMs = Math.Max(0, delay);
             Plugin.Config.Save();
         }
 
         var force = Plugin.Config.Duty.ForceLeave;
-        if (ImGui.Checkbox("Force leave without waiting for combat to end", ref force))
+        if (ImGui.Checkbox("不等待脱战，强制退出", ref force))
         {
             Plugin.Config.Duty.ForceLeave = force;
             Plugin.Config.Save();
         }
 
         var skipHighEnd = Plugin.Config.Duty.SkipHighEndDuties;
-        if (ImGui.Checkbox("Do not leave high-end duties automatically", ref skipHighEnd))
+        if (ImGui.Checkbox("不自动退出高难任务", ref skipHighEnd))
         {
             Plugin.Config.Duty.SkipHighEndDuties = skipHighEnd;
             Plugin.Config.Save();
         }
 
         var mentor = Plugin.Config.Duty.LeaveMentorRoulette;
-        if (ImGui.Checkbox("Always leave Mentor Roulette duties", ref mentor))
+        if (ImGui.Checkbox("导师随机任务始终自动退出", ref mentor))
         {
             Plugin.Config.Duty.LeaveMentorRoulette = mentor;
             Plugin.Config.Save();
         }
 
-        ImGui.TextUnformatted("Normal leave whitelist");
+        ImGui.TextUnformatted("普通退出白名单");
         BasicFeatures.DrawDutySelector(
             "NormalLeaveDutySelector",
-            "Checked duties leave after the delay and, unless forced, after combat ends.",
+            "已勾选的任务会在延迟结束后退出；未启用强制退出时还会等待脱战。",
             ref leaveSearch,
             Plugin.Config.Duty.LeaveWhitelist);
 
-        ImGui.TextUnformatted("Immediate leave whitelist");
+        ImGui.TextUnformatted("立即退出白名单");
         BasicFeatures.DrawDutySelector(
             "ImmediateLeaveDutySelector",
-            "Checked duties use the inactive leave path immediately after completion.",
+            "已勾选的任务完成后会立即使用非活动状态退出方式。",
             ref immediateLeaveSearch,
             Plugin.Config.Duty.ImmediateLeaveWhitelist);
     }

@@ -143,21 +143,21 @@ internal sealed unsafe class AutoRefuseTradeFeature : IDisposable
 
     private static void NotifyTradeCancel()
     {
-        const string message = "Incoming trade request refused.";
+        const string message = "已拒绝收到的交易请求。";
         var settings = Plugin.Config.Trade;
 
         if (settings.SendNotification)
         {
             Plugin.Notifications.AddNotification(new Notification
             {
-                Title = "Keita Toolbox",
+                Title = "Keita 工具箱",
                 Content = message,
                 Type = NotificationType.Info,
             });
         }
 
         if (settings.SendChat)
-            Plugin.Chat.Print($"[Keita Toolbox] {message} ({DateTime.Now:t})");
+            Plugin.Chat.Print($"[Keita 工具箱] {message}（{DateTime.Now:t}）");
 
         if (string.IsNullOrWhiteSpace(settings.ExtraCommands))
             return;
@@ -200,11 +200,11 @@ internal sealed unsafe class AutoRefuseTradeFeature : IDisposable
 
     public void DrawSettings()
     {
-        if (!ImGui.CollapsingHeader("Conditional automatic trade refusal"))
+        if (!ImGui.CollapsingHeader("按条件自动拒绝交易"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "automatic trade refusal",
+            "自动拒绝交易",
             Plugin.Config.Features.AutoRefuseTrade,
             value =>
             {
@@ -214,35 +214,35 @@ internal sealed unsafe class AutoRefuseTradeFeature : IDisposable
             });
 
         var allowFriends = Plugin.Config.Trade.AllowFriends;
-        if (ImGui.Checkbox("Allow trades from friends", ref allowFriends))
+        if (ImGui.Checkbox("允许好友交易", ref allowFriends))
         {
             Plugin.Config.Trade.AllowFriends = allowFriends;
             Plugin.Config.Save();
         }
 
         var allowParty = Plugin.Config.Trade.AllowPartyMembers;
-        if (ImGui.Checkbox("Allow trades from party members", ref allowParty))
+        if (ImGui.Checkbox("允许小队成员交易", ref allowParty))
         {
             Plugin.Config.Trade.AllowPartyMembers = allowParty;
             Plugin.Config.Save();
         }
 
         var delay = Plugin.Config.Trade.DelayMs;
-        if (ImGui.InputUInt("Refusal delay (ms)", ref delay))
+        if (ImGui.InputUInt("拒绝延迟（毫秒）", ref delay))
         {
             Plugin.Config.Trade.DelayMs = delay;
             Plugin.Config.Save();
         }
 
         var sendChat = Plugin.Config.Trade.SendChat;
-        if (ImGui.Checkbox("Print refusal in local chat", ref sendChat))
+        if (ImGui.Checkbox("在本地聊天栏提示", ref sendChat))
         {
             Plugin.Config.Trade.SendChat = sendChat;
             Plugin.Config.Save();
         }
 
         var sendNotification = Plugin.Config.Trade.SendNotification;
-        if (ImGui.Checkbox("Show a notification", ref sendNotification))
+        if (ImGui.Checkbox("显示通知", ref sendNotification))
         {
             Plugin.Config.Trade.SendNotification = sendNotification;
             Plugin.Config.Save();
@@ -250,7 +250,7 @@ internal sealed unsafe class AutoRefuseTradeFeature : IDisposable
 
         var commands = Plugin.Config.Trade.ExtraCommands;
         if (ImGui.InputTextMultiline(
-                "Extra commands",
+                "附加命令",
                 ref commands,
                 4096,
                 new Vector2(0, 140)))
@@ -260,7 +260,7 @@ internal sealed unsafe class AutoRefuseTradeFeature : IDisposable
         }
 
         Plugin.DrawHelp(
-            "Use one command per line. /wait 1000 and a trailing <wait.1000> use millisecond delays.");
+            "每行填写一条命令。/wait 1000 和末尾的 <wait.1000> 均使用毫秒延迟。");
     }
 
     private static readonly Regex WaitParamRegex = new(

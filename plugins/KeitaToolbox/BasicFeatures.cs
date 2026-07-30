@@ -362,24 +362,24 @@ internal sealed unsafe class BasicFeatures : IDisposable
 
     public void DrawAnnouncementSettings()
     {
-        if (!ImGui.CollapsingHeader("Recruitment text after duty clear"))
+        if (!ImGui.CollapsingHeader("副本结束后发送招募信息"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "recruitment text announcement",
+            "招募信息回显",
             Plugin.Config.Features.AnnounceRecruitmentOnClear,
             value => Plugin.Config.Features.AnnounceRecruitmentOnClear = value);
         Plugin.DrawHelp(
-            "Captures the Party Finder recruitment text when joining a party and prints it to /echo after duty completion.");
+            "加入小队时记录招募信息，副本完成后通过 /echo 输出。");
     }
 
     public void DrawBmraiSettings()
     {
-        if (!ImGui.CollapsingHeader("BossMod Reborn distance"))
+        if (!ImGui.CollapsingHeader("BossMod Reborn 距离"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "automatic bmrai distance",
+            "自动设置 bmrai 距离",
             Plugin.Config.Features.AutoBmraiMaxDistance,
             value =>
             {
@@ -388,7 +388,7 @@ internal sealed unsafe class BasicFeatures : IDisposable
             });
 
         var melee = Plugin.Config.Bmrai.MeleeDistance;
-        if (ImGui.InputFloat("Tank / melee distance", ref melee, 0.1f, 1f, "%.1f"))
+        if (ImGui.InputFloat("防护 / 近战距离", ref melee, 0.1f, 1f, "%.1f"))
         {
             Plugin.Config.Bmrai.MeleeDistance = Math.Max(0, melee);
             Plugin.Config.Save();
@@ -396,7 +396,7 @@ internal sealed unsafe class BasicFeatures : IDisposable
         }
 
         var ranged = Plugin.Config.Bmrai.RangedDistance;
-        if (ImGui.InputFloat("Healer / ranged distance", ref ranged, 0.1f, 1f, "%.1f"))
+        if (ImGui.InputFloat("治疗 / 远程距离", ref ranged, 0.1f, 1f, "%.1f"))
         {
             Plugin.Config.Bmrai.RangedDistance = Math.Max(0, ranged);
             Plugin.Config.Save();
@@ -404,58 +404,58 @@ internal sealed unsafe class BasicFeatures : IDisposable
         }
 
         var format = Plugin.Config.Bmrai.CommandFormat;
-        if (ImGui.InputText("Command format", ref format, 256))
+        if (ImGui.InputText("命令格式", ref format, 256))
         {
             Plugin.Config.Bmrai.CommandFormat = format;
             Plugin.Config.Save();
             lastJobId = 0;
         }
-        Plugin.DrawHelp("Use {0} as the distance placeholder.");
+        Plugin.DrawHelp("使用 {0} 作为距离占位符。");
     }
 
     public void DrawImeSettings()
     {
-        if (!ImGui.CollapsingHeader("Chinese IME cleanup"))
+        if (!ImGui.CollapsingHeader("中文输入法残留清理"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "IME garbage cleanup",
+            "输入法残留清理",
             Plugin.Config.Features.ImeGarbageFix,
             value => Plugin.Config.Features.ImeGarbageFix = value);
         Plugin.DrawHelp(
-            "Clears pending Windows IME composition only when neither the game nor ImGui is accepting text input.");
+            "仅在游戏和插件界面均未接收文字输入时，清除 Windows 输入法残留的组字内容。");
     }
 
     public void DrawCommenceSettings()
     {
-        if (!ImGui.CollapsingHeader("Automatic duty commence"))
+        if (!ImGui.CollapsingHeader("自动开始任务"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "automatic duty commence",
+            "自动开始任务",
             Plugin.Config.Features.AutoCommenceDuty,
             value => Plugin.Config.Features.AutoCommenceDuty = value);
         DrawDutySelector(
             "CommenceDutySelector",
-            "Only checked duties are commenced automatically.",
+            "仅自动确认已勾选的任务。",
             ref commenceSearch,
             Plugin.Config.Duty.CommenceWhitelist);
     }
 
     public void DrawPartyFinderSettings()
     {
-        if (!ImGui.CollapsingHeader("Party Finder duty filter"))
+        if (!ImGui.CollapsingHeader("招募板任务过滤"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "Party Finder duty filter",
+            "招募板任务过滤",
             Plugin.Config.Features.PartyFinderDutyFilter,
             value => Plugin.Config.Features.PartyFinderDutyFilter = value);
 
         ImGui.SetNextItemWidth(260);
-        ImGui.InputText("Keyword", ref partyFinderInput, 128);
+        ImGui.InputText("关键词", ref partyFinderInput, 128);
         ImGui.SameLine();
-        if (ImGui.Button("Add") && !string.IsNullOrWhiteSpace(partyFinderInput))
+        if (ImGui.Button("添加") && !string.IsNullOrWhiteSpace(partyFinderInput))
         {
             var keyword = partyFinderInput.Trim();
             if (!Plugin.Config.PartyFinder.BlockedKeywords.Contains(
@@ -471,7 +471,7 @@ internal sealed unsafe class BasicFeatures : IDisposable
         for (var index = 0; index < Plugin.Config.PartyFinder.BlockedKeywords.Count; index++)
         {
             ImGui.PushID(index);
-            if (ImGui.SmallButton("Remove"))
+            if (ImGui.SmallButton("移除"))
             {
                 Plugin.Config.PartyFinder.BlockedKeywords.RemoveAt(index);
                 Plugin.Config.Save();
@@ -482,25 +482,25 @@ internal sealed unsafe class BasicFeatures : IDisposable
             ImGui.TextUnformatted(Plugin.Config.PartyFinder.BlockedKeywords[index]);
             ImGui.PopID();
         }
-        Plugin.DrawHelp("A listing is hidden when its duty name contains any configured keyword.");
+        Plugin.DrawHelp("任务名称包含任一已设置关键词时隐藏该招募。");
     }
 
     public void DrawPluginSwitcherSettings()
     {
-        if (!ImGui.CollapsingHeader("PvP and territory plugin switcher"))
+        if (!ImGui.CollapsingHeader("PvP 与地图插件切换"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "plugin switcher",
+            "插件自动切换",
             Plugin.Config.Features.PvpPluginSwitcher,
             value => Plugin.Config.Features.PvpPluginSwitcher = value);
 
         DrawPluginListInput(
-            "Disable in PvP",
+            "进入 PvP 时禁用",
             Plugin.Config.PluginSwitcher.DisableInPvp,
             value => Plugin.Config.PluginSwitcher.DisableInPvp = value);
         DrawPluginListInput(
-            "Enable in PvP",
+            "进入 PvP 时启用",
             Plugin.Config.PluginSwitcher.EnableInPvp,
             value => Plugin.Config.PluginSwitcher.EnableInPvp = value);
 
@@ -509,9 +509,9 @@ internal sealed unsafe class BasicFeatures : IDisposable
         {
             var rule = Plugin.Config.PluginSwitcher.MapRules[index];
             ImGui.PushID(index);
-            ImGui.TextUnformatted($"Territory rule {index + 1}");
+            ImGui.TextUnformatted($"地图规则 {index + 1}");
             ImGui.SameLine();
-            if (ImGui.SmallButton("Remove rule"))
+            if (ImGui.SmallButton("移除规则"))
             {
                 territoryInputs.Remove(rule);
                 Plugin.Config.PluginSwitcher.MapRules.RemoveAt(index);
@@ -521,13 +521,13 @@ internal sealed unsafe class BasicFeatures : IDisposable
             }
 
             var territories = rule.Territories;
-            if (ImGui.InputText("Territory IDs", ref territories, 512))
+            if (ImGui.InputText("地图 ID", ref territories, 512))
             {
                 rule.Territories = territories;
                 Plugin.Config.Save();
             }
             ImGui.SameLine();
-            if (ImGui.SmallButton($"Add current ({Plugin.ClientState.TerritoryType})"))
+            if (ImGui.SmallButton($"添加当前地图（{Plugin.ClientState.TerritoryType}）"))
             {
                 var ids = ParseList(rule.Territories);
                 var current = Plugin.ClientState.TerritoryType.ToString();
@@ -540,25 +540,25 @@ internal sealed unsafe class BasicFeatures : IDisposable
             }
 
             DrawPluginListInput(
-                "Disable on entry",
+                "进入时禁用",
                 rule.Disable,
                 value => rule.Disable = value);
             DrawPluginListInput(
-                "Enable on entry",
+                "进入时启用",
                 rule.Enable,
                 value => rule.Enable = value);
             ImGui.Separator();
             ImGui.PopID();
         }
 
-        if (ImGui.Button("Add territory rule"))
+        if (ImGui.Button("添加地图规则"))
         {
             Plugin.Config.PluginSwitcher.MapRules.Add(new MapRule());
             Plugin.Config.Save();
         }
 
         Plugin.DrawHelp(
-            $"Use comma-separated plugin InternalNames. Current territory: {Plugin.ClientState.TerritoryType}; PvP: {Plugin.ClientState.IsPvP}.");
+            $"插件内部名称请用英文逗号分隔。当前地图：{Plugin.ClientState.TerritoryType}；PvP：{Plugin.ClientState.IsPvP}。");
     }
 
     private static void DrawPluginListInput(string label, string value, Action<string> setter)
@@ -579,9 +579,9 @@ internal sealed unsafe class BasicFeatures : IDisposable
         HashSet<uint> selected)
     {
         ImGui.SetNextItemWidth(320);
-        ImGui.InputText($"Search##{id}", ref search, 128);
+        ImGui.InputText($"搜索##{id}", ref search, 128);
         ImGui.SameLine();
-        ImGui.TextDisabled($"{selected.Count} selected");
+        ImGui.TextDisabled($"已选择 {selected.Count} 项");
 
         var sheet = Plugin.Data.GetExcelSheet<ContentFinderCondition>();
         if (sheet == null)

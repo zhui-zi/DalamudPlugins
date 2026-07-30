@@ -20,30 +20,30 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
 
     private static readonly (XivChatType Type, string Label)[] AvailableChannels =
     [
-        (XivChatType.Say, "Say"),
-        (XivChatType.Yell, "Yell"),
-        (XivChatType.Shout, "Shout"),
-        (XivChatType.TellIncoming, "Tell"),
-        (XivChatType.Party, "Party"),
-        (XivChatType.Alliance, "Alliance"),
-        (XivChatType.FreeCompany, "Free Company"),
-        (XivChatType.NoviceNetwork, "Novice Network"),
-        (XivChatType.Ls1, "LS1"),
-        (XivChatType.Ls2, "LS2"),
-        (XivChatType.Ls3, "LS3"),
-        (XivChatType.Ls4, "LS4"),
-        (XivChatType.Ls5, "LS5"),
-        (XivChatType.Ls6, "LS6"),
-        (XivChatType.Ls7, "LS7"),
-        (XivChatType.Ls8, "LS8"),
-        (XivChatType.CrossLinkShell1, "CWLS1"),
-        (XivChatType.CrossLinkShell2, "CWLS2"),
-        (XivChatType.CrossLinkShell3, "CWLS3"),
-        (XivChatType.CrossLinkShell4, "CWLS4"),
-        (XivChatType.CrossLinkShell5, "CWLS5"),
-        (XivChatType.CrossLinkShell6, "CWLS6"),
-        (XivChatType.CrossLinkShell7, "CWLS7"),
-        (XivChatType.CrossLinkShell8, "CWLS8"),
+        (XivChatType.Say, "说话"),
+        (XivChatType.Yell, "呼喊"),
+        (XivChatType.Shout, "喊话"),
+        (XivChatType.TellIncoming, "悄悄话"),
+        (XivChatType.Party, "小队"),
+        (XivChatType.Alliance, "团队"),
+        (XivChatType.FreeCompany, "部队"),
+        (XivChatType.NoviceNetwork, "新人频道"),
+        (XivChatType.Ls1, "通讯贝1"),
+        (XivChatType.Ls2, "通讯贝2"),
+        (XivChatType.Ls3, "通讯贝3"),
+        (XivChatType.Ls4, "通讯贝4"),
+        (XivChatType.Ls5, "通讯贝5"),
+        (XivChatType.Ls6, "通讯贝6"),
+        (XivChatType.Ls7, "通讯贝7"),
+        (XivChatType.Ls8, "通讯贝8"),
+        (XivChatType.CrossLinkShell1, "跨服通讯贝1"),
+        (XivChatType.CrossLinkShell2, "跨服通讯贝2"),
+        (XivChatType.CrossLinkShell3, "跨服通讯贝3"),
+        (XivChatType.CrossLinkShell4, "跨服通讯贝4"),
+        (XivChatType.CrossLinkShell5, "跨服通讯贝5"),
+        (XivChatType.CrossLinkShell6, "跨服通讯贝6"),
+        (XivChatType.CrossLinkShell7, "跨服通讯贝7"),
+        (XivChatType.CrossLinkShell8, "跨服通讯贝8"),
     ];
 
     private readonly Hook<RaptureLogModule.Delegates.AddMsgSourceEntry> addMsgSourceEntryHook;
@@ -199,7 +199,7 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
             return;
 
         if (Plugin.Config.AutoInvite.PrintMessage)
-            Plugin.Chat.Print($"[Keita Toolbox] Inviting {playerName}.");
+            Plugin.Chat.Print($"[Keita 工具箱] 正在邀请 {playerName}。");
 
         if (inInstance)
             proxy->InviteToPartyInInstanceByContentId(contentId);
@@ -229,21 +229,21 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
         };
         Plugin.Config.Save();
         Plugin.Chat.Print(
-            $"[Keita Toolbox] Auto invite {(Plugin.Config.AutoInvite.RuntimeEnabled ? "enabled" : "disabled")}.");
+            $"[Keita 工具箱] 自动邀请已{(Plugin.Config.AutoInvite.RuntimeEnabled ? "开启" : "关闭")}。");
     }
 
     public void DrawSettings()
     {
-        if (!ImGui.CollapsingHeader("Automatic party invite"))
+        if (!ImGui.CollapsingHeader("自动邀请入队"))
             return;
 
         Plugin.DrawFeatureToggle(
-            "automatic party invite",
+            "自动邀请入队",
             Plugin.Config.Features.AutoInviteToParty,
             value => Plugin.Config.Features.AutoInviteToParty = value);
 
         var runtimeEnabled = Plugin.Config.AutoInvite.RuntimeEnabled;
-        if (ImGui.Checkbox("Runtime invite switch", ref runtimeEnabled))
+        if (ImGui.Checkbox("临时运行开关", ref runtimeEnabled))
         {
             Plugin.Config.AutoInvite.RuntimeEnabled = runtimeEnabled;
             Plugin.Config.Save();
@@ -252,34 +252,34 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
         ImGui.TextDisabled("/ktb autoinvite on|off|toggle");
 
         var pattern = Plugin.Config.AutoInvite.TextPattern;
-        if (ImGui.InputText("Message pattern", ref pattern, 256))
+        if (ImGui.InputText("消息匹配表达式", ref pattern, 256))
         {
             Plugin.Config.AutoInvite.TextPattern = pattern;
             Plugin.Config.Save();
         }
 
         var regex = Plugin.Config.AutoInvite.RegexMatch;
-        if (ImGui.Checkbox("Use regular expression", ref regex))
+        if (ImGui.Checkbox("使用正则表达式", ref regex))
         {
             Plugin.Config.AutoInvite.RegexMatch = regex;
             Plugin.Config.Save();
         }
 
         var delay = Plugin.Config.AutoInvite.InviteDelayMs;
-        if (ImGui.SliderInt("Invite delay (ms)", ref delay, 0, 5000))
+        if (ImGui.SliderInt("邀请延迟（毫秒）", ref delay, 0, 5000))
         {
             Plugin.Config.AutoInvite.InviteDelayMs = Math.Clamp(delay, 0, 60000);
             Plugin.Config.Save();
         }
 
         var print = Plugin.Config.AutoInvite.PrintMessage;
-        if (ImGui.Checkbox("Print a local message when inviting", ref print))
+        if (ImGui.Checkbox("邀请时在本地聊天栏提示", ref print))
         {
             Plugin.Config.AutoInvite.PrintMessage = print;
             Plugin.Config.Save();
         }
 
-        ImGui.TextUnformatted("Listen channels");
+        ImGui.TextUnformatted("监听频道");
         for (var index = 0; index < AvailableChannels.Length; index++)
         {
             var (type, label) = AvailableChannels[index];
@@ -298,6 +298,6 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
         }
 
         Plugin.DrawHelp(
-            "Full parties, non-leaders, existing party members, and duplicate pending invites are skipped.");
+            "队伍已满、自己不是队长、对方已在队内或已有待处理邀请时会自动跳过。");
     }
 }

@@ -51,7 +51,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AutoLeaveFeature? autoLeaveFeature;
     private readonly AutoRefuseTradeFeature? autoRefuseTradeFeature;
     private readonly PortraitGearSyncFeature? portraitFeature;
-    private readonly AyanoHimituFeature? ayanoFeature;
+    private readonly AdvancedToolsFeature? advancedToolsFeature;
     private readonly MapGearsetFeature? mapGearsetFeature;
     private readonly HttpClient unlockClient = new()
     {
@@ -76,9 +76,9 @@ public sealed class Plugin : IDalamudPlugin
         portraitFeature = CreateFeature(
             "portrait gear synchronization",
             () => new PortraitGearSyncFeature());
-        ayanoFeature = CreateFeature(
-            "Ayano Himitu Box functions",
-            () => new AyanoHimituFeature());
+        advancedToolsFeature = CreateFeature(
+            "advanced tools",
+            () => new AdvancedToolsFeature());
         mapGearsetFeature = CreateFeature(
             "automatic map gearset switch",
             () => new MapGearsetFeature());
@@ -89,11 +89,11 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi += OpenWindow;
         CommandManager.AddHandler(Command, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Keita Toolbox settings.",
+            HelpMessage = "打开 Keita 工具箱设置。",
         });
         CommandManager.AddHandler(ShortCommand, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Keita Toolbox settings.",
+            HelpMessage = "打开 Keita 工具箱设置。",
         });
 
         WarnAboutLegacyPlugins();
@@ -110,7 +110,7 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update -= OnFrameworkUpdate;
 
         mapGearsetFeature?.Dispose();
-        ayanoFeature?.Dispose();
+        advancedToolsFeature?.Dispose();
         portraitFeature?.Dispose();
         autoRefuseTradeFeature?.Dispose();
         autoLeaveFeature?.Dispose();
@@ -140,7 +140,7 @@ public sealed class Plugin : IDalamudPlugin
         if (trimmed.StartsWith("autoinvite", StringComparison.OrdinalIgnoreCase))
         {
             if (autoInviteFeature == null)
-                Chat.PrintError("[Keita Toolbox] Automatic party invite is unavailable.");
+                Chat.PrintError("[Keita 工具箱] 自动邀请功能当前不可用。");
             else
                 autoInviteFeature.HandleCommand(trimmed["autoinvite".Length..]);
             return;
@@ -163,50 +163,50 @@ public sealed class Plugin : IDalamudPlugin
             return;
 
         ImGui.SetNextWindowSize(new Vector2(720, 620), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("Keita Toolbox", ref windowOpen))
+        if (!ImGui.Begin("Keita 工具箱", ref windowOpen))
         {
             ImGui.End();
             return;
         }
 
-        ImGui.TextDisabled("All features are independent. Changes are saved immediately.");
+        ImGui.TextDisabled("各项功能相互独立，修改后立即保存。");
         ImGui.Separator();
 
         if (ImGui.BeginTabBar("ToolboxTabs"))
         {
-            DrawTab("General", () =>
+            DrawTab("常规", () =>
             {
                 basicFeatures?.DrawBmraiSettings();
                 basicFeatures?.DrawImeSettings();
                 basicFeatures?.DrawPluginSwitcherSettings();
                 if (mapGearsetFeature == null)
-                    DrawUnavailable("Automatic map gearset switch");
+                    DrawUnavailable("按地图自动切换套装");
                 else
                     mapGearsetFeature.DrawSettings();
                 DrawProtectedFeatureSettings();
             });
-            DrawTab("Duty", () =>
+            DrawTab("副本", () =>
             {
                 basicFeatures?.DrawCommenceSettings();
                 autoLeaveFeature?.DrawSettings();
             });
-            DrawTab("Recruitment", () =>
+            DrawTab("招募", () =>
             {
                 basicFeatures?.DrawAnnouncementSettings();
                 autoInviteFeature?.DrawSettings();
                 basicFeatures?.DrawPartyFinderSettings();
             });
-            DrawTab("Trade", () =>
+            DrawTab("交易", () =>
             {
                 if (autoRefuseTradeFeature == null)
-                    DrawUnavailable("Automatic trade refusal");
+                    DrawUnavailable("自动拒绝交易");
                 else
                     autoRefuseTradeFeature.DrawSettings();
             });
-            DrawTab("Portrait", () =>
+            DrawTab("肖像", () =>
             {
                 if (portraitFeature == null)
-                    DrawUnavailable("Portrait gear synchronization");
+                    DrawUnavailable("肖像与装备套装同步");
                 else
                     portraitFeature.DrawSettings();
             });
@@ -229,7 +229,7 @@ public sealed class Plugin : IDalamudPlugin
     internal static bool DrawFeatureToggle(string label, bool value, Action<bool> setter)
     {
         var changedValue = value;
-        if (!ImGui.Checkbox($"Enable {label}", ref changedValue))
+        if (!ImGui.Checkbox($"启用{label}", ref changedValue))
             return false;
 
         setter(changedValue);
@@ -249,20 +249,20 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!ProtectedFeaturesUnlocked)
         {
-            if (!ImGui.CollapsingHeader("Protected Ayano and I-Ching tools"))
+            if (!ImGui.CollapsingHeader("受保护的高级工具"))
                 return;
 
             ImGui.TextWrapped(
-                "Enter the toolbox password once to unlock all Ayano and I-Ching derived functions on this installation.");
+                "首次输入工具箱密码即可解锁本机的受保护高级功能，后续无需再次输入。");
             CompleteUnlockRequest();
             ImGui.SetNextItemWidth(300f);
             var submitted = ImGui.InputText(
-                "Password",
+                "密码",
                 ref protectedPassword,
                 128,
                 ImGuiInputTextFlags.Password | ImGuiInputTextFlags.EnterReturnsTrue);
             ImGui.SameLine();
-            submitted |= ImGui.Button("Unlock");
+            submitted |= ImGui.Button("解锁");
 
             if (submitted && unlockTask == null)
             {
@@ -274,25 +274,25 @@ public sealed class Plugin : IDalamudPlugin
             if (!ProtectedFeaturesUnlocked)
             {
                 if (unlockTask != null)
-                    ImGui.TextDisabled("Verifying...");
+                    ImGui.TextDisabled("正在验证……");
                 else if (unlockError.Length > 0)
                     ImGui.TextColored(new Vector4(1f, 0.35f, 0.35f, 1f), unlockError);
                 DrawHelp(
-                    "The password is verified over HTTPS and is not stored. Only the successful unlock state is saved locally.");
+                    "密码通过 HTTPS 验证且不会保存，本地仅记录验证成功状态。");
                 return;
             }
         }
 
         DrawInstantReturnSettings();
-        if (ayanoFeature == null)
+        if (advancedToolsFeature == null)
         {
-            DrawUnavailable("I-Ching tools");
-            DrawUnavailable("Ayano Himitu Box functions");
+            DrawUnavailable("战斗辅助");
+            DrawUnavailable("高级移动工具");
         }
         else
         {
-            ayanoFeature.DrawIChingSettings();
-            ayanoFeature.DrawSettings();
+            advancedToolsFeature.DrawCombatUtilitySettings();
+            advancedToolsFeature.DrawSettings();
         }
     }
 
@@ -322,18 +322,18 @@ public sealed class Plugin : IDalamudPlugin
                 Config.ProtectedFeaturesUnlocked = true;
                 Config.Save();
                 unlockError = string.Empty;
-                ayanoFeature?.RefreshProtectionState();
-                Chat.Print("[Keita Toolbox] Ayano and I-Ching tools unlocked.");
+                advancedToolsFeature?.RefreshProtectionState();
+                Chat.Print("[Keita 工具箱] 受保护的高级工具已解锁。");
             }
             else
             {
-                unlockError = "Incorrect password.";
+                unlockError = "密码错误。";
             }
         }
         catch (Exception ex)
         {
             Log.Warning(ex, "The protected tool unlock request failed.");
-            unlockError = "Unable to contact the unlock service. Try again later.";
+            unlockError = "无法连接验证服务，请稍后重试。";
         }
         finally
         {
@@ -345,16 +345,16 @@ public sealed class Plugin : IDalamudPlugin
 
     private static void DrawInstantReturnSettings()
     {
-        if (!ImGui.CollapsingHeader("Instant return"))
+        if (!ImGui.CollapsingHeader("即刻返回"))
             return;
 
         DrawFeatureToggle(
-            "instant return",
+            "即刻返回",
             Config.Features.InstantReturn,
             value => Config.Features.InstantReturn = value);
-        DrawHelp("Runs the same internal InstantReturn command used by I-Ching. Command: /ktb return");
+        DrawHelp("立即执行返回命令。命令：/ktb return");
 
-        if (ImGui.Button("Return immediately"))
+        if (ImGui.Button("立即返回"))
             ExecuteInstantReturn();
     }
 
@@ -362,13 +362,13 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!ProtectedFeaturesUnlocked)
         {
-            Chat.PrintError("[Keita Toolbox] Unlock the Ayano and I-Ching tools in settings first.");
+            Chat.PrintError("[Keita 工具箱] 请先在设置中解锁受保护的高级工具。");
             return;
         }
 
         if (!Config.Features.InstantReturn)
         {
-            Chat.PrintError("[Keita Toolbox] Enable instant return in the settings first.");
+            Chat.PrintError("[Keita 工具箱] 请先在设置中启用即刻返回。");
             return;
         }
 
@@ -390,7 +390,7 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private static void DrawUnavailable(string name) =>
-        ImGui.TextDisabled($"{name} is unavailable. Check the Dalamud log.");
+        ImGui.TextDisabled($"{name}当前不可用，请检查 Dalamud 日志。");
 
     private static void WarnAboutLegacyPlugins()
     {
@@ -398,8 +398,6 @@ public sealed class Plugin : IDalamudPlugin
                  {
                      "IMEGarbageFix",
                      "PortraitGearSync",
-                     "AyanoHimituBox",
-                     "I-Ching-GL",
                  })
         {
             var legacy = PluginInterface.InstalledPlugins.FirstOrDefault(
