@@ -6,5 +6,5 @@ Subscription URL:
 
 ## Plugins
 
-- **Keita Toolbox** - Combines duty and recruitment automation, Occult Crescent auto-revive, plugin and map gearset switching, trade protection, IME cleanup, portrait synchronization, and advanced movement and combat utilities.
+- **Keita Toolbox** - Combines AEAssist startup management, duty and recruitment automation, Occult Crescent auto-revive, plugin and map gearset switching, trade protection, IME cleanup, portrait synchronization, and advanced movement and combat utilities.
 - **Rotation Solver Reborn zh-CN** - Localizes the primary UI and automatically rebuilds from the latest upstream release.

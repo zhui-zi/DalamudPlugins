@@ -54,6 +54,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AdvancedToolsFeature? advancedToolsFeature;
     private readonly MapGearsetFeature? mapGearsetFeature;
     private readonly AutoReviveFeature? autoReviveFeature;
+    private readonly AeAssistStartupFeature? aeAssistStartupFeature;
     private readonly HttpClient unlockClient = new()
     {
         Timeout = TimeSpan.FromSeconds(10),
@@ -88,6 +89,9 @@ public sealed class Plugin : IDalamudPlugin
         autoReviveFeature = CreateFeature(
             "Occult Crescent auto revive",
             () => new AutoReviveFeature());
+        aeAssistStartupFeature = CreateFeature(
+            "AEAssist startup automation",
+            () => new AeAssistStartupFeature());
 
         Framework.Update += OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw += DrawWindow;
@@ -115,6 +119,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= DrawWindow;
         Framework.Update -= OnFrameworkUpdate;
 
+        aeAssistStartupFeature?.Dispose();
         autoReviveFeature?.Dispose();
         mapGearsetFeature?.Dispose();
         advancedToolsFeature?.Dispose();
@@ -204,6 +209,10 @@ public sealed class Plugin : IDalamudPlugin
             {
                 basicFeatures?.DrawBmraiSettings();
                 basicFeatures?.DrawImeSettings();
+                if (aeAssistStartupFeature == null)
+                    DrawUnavailable("AEAssist 启动自动化");
+                else
+                    aeAssistStartupFeature.DrawSettings();
                 basicFeatures?.DrawPluginSwitcherSettings();
                 if (mapGearsetFeature == null)
                     DrawUnavailable("按地图自动切换套装");
