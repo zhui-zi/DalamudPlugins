@@ -58,12 +58,12 @@
     "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
     "AcceptsFeedback": true,
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/RotationSolver/latest.zip",
-    "AssemblyVersion": "7.5.5.5",
+    "AssemblyVersion": "7.5.5.6",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/RotationSolver/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/RotationSolver/latest.zip",
-    "TestingAssemblyVersion": "7.5.5.5",
-    "Changelog": "## What's Changed\r\n* Hotfixes for various Phantom Jobs by @LTS-FFXIV in https://github.com/FFXIV-CombatReborn/RotationSolverReborn/pull/1325\r\n\r\n\r\n**Full Changelog**: https://github.com/FFXIV-CombatReborn/RotationSolverReborn/compare/7.5.5.4...7.5.5.5",
+    "TestingAssemblyVersion": "7.5.5.6",
+    "Changelog": "## What's Changed\r\n* Fixes for Multi Elemental Weaknesses, updating all lists for North Horn AOEs etc by @LTS-FFXIV in https://github.com/FFXIV-CombatReborn/RotationSolverReborn/pull/1326\r\n\r\n\r\n**Full Changelog**: https://github.com/FFXIV-CombatReborn/RotationSolverReborn/compare/7.5.5.5...7.5.5.6",
     "DownloadCount": 0,
-    "LastUpdate": 1785442229
+    "LastUpdate": 1785455952
   }
 ]
