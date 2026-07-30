@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
@@ -10,6 +11,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
     private const string ScheduleGroup = "MapGearsetSwitch";
     private const int RetryDelayMs = 1000;
     private const int MaxAttempts = 30;
+    private readonly Dictionary<MapGearsetRule, string> territorySearches = [];
     private const int MaxGearsets = 100;
 
     public MapGearsetFeature()
@@ -21,6 +23,7 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
     {
         Plugin.ClientState.TerritoryChanged -= OnTerritoryChanged;
         Plugin.Scheduler.Cancel(ScheduleGroup);
+        territorySearches.Clear();
     }
 
     private void OnTerritoryChanged(uint territory) => ScheduleForTerritory(territory);
@@ -174,19 +177,14 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
             ImGui.SameLine();
             if (ImGui.SmallButton("移除规则"))
             {
+                territorySearches.Remove(rule);
                 Plugin.Config.MapGearset.Rules.RemoveAt(index);
                 Plugin.Config.Save();
                 ImGui.PopID();
                 break;
             }
 
-            var territory = (int)rule.TerritoryId;
-            if (ImGui.InputInt("地图 ID", ref territory))
-            {
-                rule.TerritoryId = (uint)Math.Max(0, territory);
-                Plugin.Config.Save();
-            }
-            ImGui.SameLine();
+            DrawTerritorySelector(rule);
             if (ImGui.SmallButton($"使用当前地图（{Plugin.ClientState.TerritoryType}）"))
             {
                 rule.TerritoryId = Plugin.ClientState.TerritoryType;
@@ -213,6 +211,65 @@ internal sealed unsafe class MapGearsetFeature : IDisposable
 
         Plugin.DrawHelp(
             "同一地图只使用第一条匹配规则；读图、战斗、剧情或任务交互结束后才会切换。");
+    }
+
+    private void DrawTerritorySelector(MapGearsetRule rule)
+    {
+        if (!territorySearches.TryGetValue(rule, out var search))
+            search = string.Empty;
+
+        if (!ImGui.BeginCombo("地图", BasicFeatures.GetTerritoryLabel(rule.TerritoryId)))
+            return;
+
+        ImGui.SetNextItemWidth(320);
+        if (ImGui.InputText("搜索地图##MapGearset", ref search, 128))
+            territorySearches[rule] = search;
+
+        var sheet = Plugin.Data.GetExcelSheet<Lumina.Excel.Sheets.TerritoryType>();
+        if (sheet != null)
+        {
+            if (ImGui.BeginChild(
+                    "MapGearsetTerritoryList",
+                    new System.Numerics.Vector2(480, 260),
+                    true))
+            {
+                var normalizedSearch = search.Trim();
+                foreach (var row in sheet)
+                {
+                    var name = BasicFeatures.GetTerritoryName(row);
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
+
+                    var label = $"{name} ({row.RowId})";
+                    if (!string.IsNullOrWhiteSpace(normalizedSearch) &&
+                        !label.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var selected = rule.TerritoryId == row.RowId;
+                    if (ImGui.Selectable($"{label}##Territory-{row.RowId}", selected))
+                    {
+                        rule.TerritoryId = row.RowId;
+                        Plugin.Config.Save();
+                    }
+
+                    if (selected)
+                        ImGui.SetItemDefaultFocus();
+                }
+            }
+            ImGui.EndChild();
+        }
+
+        ImGui.Separator();
+        var territory = (int)rule.TerritoryId;
+        if (ImGui.InputInt("手动输入地图 ID", ref territory))
+        {
+            rule.TerritoryId = (uint)Math.Max(0, territory);
+            Plugin.Config.Save();
+        }
+
+        ImGui.EndCombo();
     }
 
     private static void DrawGearsetSelector(MapGearsetRule rule)

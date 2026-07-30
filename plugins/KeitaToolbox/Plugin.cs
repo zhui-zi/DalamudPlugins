@@ -127,6 +127,7 @@ public sealed class Plugin : IDalamudPlugin
         try
         {
             Scheduler.Update();
+            advancedToolsFeature?.UpdateMouseTeleport();
         }
         catch (Exception ex)
         {
@@ -149,6 +150,24 @@ public sealed class Plugin : IDalamudPlugin
         if (trimmed.Equals("return", StringComparison.OrdinalIgnoreCase))
         {
             ExecuteInstantReturn();
+            return;
+        }
+
+        if (trimmed.Equals("mouse", StringComparison.OrdinalIgnoreCase))
+        {
+            if (advancedToolsFeature == null)
+                Chat.PrintError("[Keita 工具箱] 鼠标位置传送当前不可用。");
+            else
+                advancedToolsFeature.ArmMouseTeleport();
+            return;
+        }
+
+        if (trimmed.Equals("invincible", StringComparison.OrdinalIgnoreCase))
+        {
+            if (advancedToolsFeature == null)
+                Chat.PrintError("[Keita 工具箱] 触发无敌当前不可用。");
+            else
+                advancedToolsFeature.TriggerInvincibility();
             return;
         }
 
@@ -398,6 +417,7 @@ public sealed class Plugin : IDalamudPlugin
                  {
                      "IMEGarbageFix",
                      "PortraitGearSync",
+                     "AyanoHimituBox",
                  })
         {
             var legacy = PluginInterface.InstalledPlugins.FirstOrDefault(

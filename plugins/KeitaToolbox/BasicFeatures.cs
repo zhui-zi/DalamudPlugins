@@ -25,10 +25,13 @@ internal sealed unsafe class BasicFeatures : IDisposable
     private const uint NiCompositionStr = 0x0015;
     private const uint CpsCancel = 0x0004;
 
-    private readonly Dictionary<MapRule, string> territoryInputs = [];
+    private static readonly Dictionary<string, bool> dutySelectedOnly = [];
+    private readonly Dictionary<MapRule, MapRuleEditorState> mapRuleEditors = [];
     private string pendingRecruitment = string.Empty;
     private string commenceSearch = string.Empty;
     private string partyFinderInput = string.Empty;
+    private string pvpDisablePluginSearch = string.Empty;
+    private string pvpEnablePluginSearch = string.Empty;
     private uint lastJobId;
     private long nextImeCleanupAt;
     private nint gameWindow;
@@ -495,38 +498,41 @@ internal sealed unsafe class BasicFeatures : IDisposable
             Plugin.Config.Features.PvpPluginSwitcher,
             value => Plugin.Config.Features.PvpPluginSwitcher = value);
 
-        DrawPluginListInput(
+        DrawPluginSelector(
+            "PvpDisablePlugins",
             "进入 PvP 时禁用",
             Plugin.Config.PluginSwitcher.DisableInPvp,
-            value => Plugin.Config.PluginSwitcher.DisableInPvp = value);
-        DrawPluginListInput(
+            value => Plugin.Config.PluginSwitcher.DisableInPvp = value,
+            ref pvpDisablePluginSearch);
+        DrawPluginSelector(
+            "PvpEnablePlugins",
             "进入 PvP 时启用",
             Plugin.Config.PluginSwitcher.EnableInPvp,
-            value => Plugin.Config.PluginSwitcher.EnableInPvp = value);
+            value => Plugin.Config.PluginSwitcher.EnableInPvp = value,
+            ref pvpEnablePluginSearch);
 
         ImGui.Separator();
         for (var index = 0; index < Plugin.Config.PluginSwitcher.MapRules.Count; index++)
         {
             var rule = Plugin.Config.PluginSwitcher.MapRules[index];
+            if (!mapRuleEditors.TryGetValue(rule, out var editor))
+            {
+                editor = new MapRuleEditorState();
+                mapRuleEditors[rule] = editor;
+            }
+
             ImGui.PushID(index);
             ImGui.TextUnformatted($"地图规则 {index + 1}");
             ImGui.SameLine();
             if (ImGui.SmallButton("移除规则"))
             {
-                territoryInputs.Remove(rule);
+                mapRuleEditors.Remove(rule);
                 Plugin.Config.PluginSwitcher.MapRules.RemoveAt(index);
                 Plugin.Config.Save();
                 ImGui.PopID();
                 break;
             }
 
-            var territories = rule.Territories;
-            if (ImGui.InputText("地图 ID", ref territories, 512))
-            {
-                rule.Territories = territories;
-                Plugin.Config.Save();
-            }
-            ImGui.SameLine();
             if (ImGui.SmallButton($"添加当前地图（{Plugin.ClientState.TerritoryType}）"))
             {
                 var ids = ParseList(rule.Territories);
@@ -539,14 +545,24 @@ internal sealed unsafe class BasicFeatures : IDisposable
                 }
             }
 
-            DrawPluginListInput(
+            DrawTerritorySelector(
+                "Territories",
+                "生效地图",
+                rule.Territories,
+                value => rule.Territories = value,
+                ref editor.TerritorySearch);
+            DrawPluginSelector(
+                "DisablePlugins",
                 "进入时禁用",
                 rule.Disable,
-                value => rule.Disable = value);
-            DrawPluginListInput(
+                value => rule.Disable = value,
+                ref editor.DisablePluginSearch);
+            DrawPluginSelector(
+                "EnablePlugins",
                 "进入时启用",
                 rule.Enable,
-                value => rule.Enable = value);
+                value => rule.Enable = value,
+                ref editor.EnablePluginSearch);
             ImGui.Separator();
             ImGui.PopID();
         }
@@ -558,18 +574,142 @@ internal sealed unsafe class BasicFeatures : IDisposable
         }
 
         Plugin.DrawHelp(
-            $"插件内部名称请用英文逗号分隔。当前地图：{Plugin.ClientState.TerritoryType}；PvP：{Plugin.ClientState.IsPvP}。");
+            $"直接从列表勾选插件和地图；列表中没有的项目可在“手动编辑”中填写。当前地图：{Plugin.ClientState.TerritoryType}；PvP：{Plugin.ClientState.IsPvP}。");
     }
 
-    private static void DrawPluginListInput(string label, string value, Action<string> setter)
+    private static void DrawPluginSelector(
+        string id,
+        string label,
+        string value,
+        Action<string> setter,
+        ref string search)
     {
-        ImGui.SetNextItemWidth(420);
-        var buffer = value;
-        if (!ImGui.InputText(label, ref buffer, 2048))
+        var selected = ParseList(value);
+        if (!ImGui.BeginCombo($"{label}##{id}", $"已选择 {selected.Count} 项"))
             return;
 
-        setter(buffer);
-        Plugin.Config.Save();
+        ImGui.SetNextItemWidth(320);
+        ImGui.InputText($"搜索插件##{id}", ref search, 128);
+
+        if (ImGui.BeginChild(
+                $"PluginSelector##{id}",
+                new System.Numerics.Vector2(0, 160),
+                true))
+        {
+            var normalizedSearch = search.Trim();
+            foreach (var plugin in Plugin.PluginInterface.InstalledPlugins
+                         .Where(item => !item.InternalName.Equals(
+                             Plugin.PluginInterface.InternalName,
+                             StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(normalizedSearch) &&
+                    !plugin.Name.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) &&
+                    !plugin.InternalName.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var enabled = selected.Contains(
+                    plugin.InternalName,
+                    StringComparer.OrdinalIgnoreCase);
+                if (!ImGui.Checkbox(
+                        $"{plugin.Name} ({plugin.InternalName})##{id}-{plugin.InternalName}",
+                        ref enabled))
+                {
+                    continue;
+                }
+
+                if (enabled)
+                    selected.Add(plugin.InternalName);
+                else
+                    selected.RemoveAll(item => item.Equals(
+                        plugin.InternalName,
+                        StringComparison.OrdinalIgnoreCase));
+                setter(string.Join(", ", selected));
+                Plugin.Config.Save();
+            }
+        }
+        ImGui.EndChild();
+
+        if (ImGui.TreeNode($"手动编辑内部名称##{id}"))
+        {
+            ImGui.SetNextItemWidth(420);
+            var buffer = value;
+            if (ImGui.InputText($"英文逗号分隔##{id}", ref buffer, 2048))
+            {
+                setter(buffer);
+                Plugin.Config.Save();
+            }
+            ImGui.TreePop();
+        }
+        ImGui.EndCombo();
+    }
+
+    private static void DrawTerritorySelector(
+        string id,
+        string label,
+        string value,
+        Action<string> setter,
+        ref string search)
+    {
+        var selected = ParseList(value)
+            .Where(item => uint.TryParse(item, out _))
+            .Select(uint.Parse)
+            .ToHashSet();
+        if (!ImGui.BeginCombo($"{label}##{id}", $"已选择 {selected.Count} 项"))
+            return;
+
+        ImGui.SetNextItemWidth(320);
+        ImGui.InputText($"搜索地图##{id}", ref search, 128);
+
+        var sheet = Plugin.Data.GetExcelSheet<TerritoryType>();
+        if (sheet != null)
+        {
+            if (ImGui.BeginChild(
+                    $"TerritorySelector##{id}",
+                    new System.Numerics.Vector2(480, 260),
+                    true))
+            {
+                var normalizedSearch = search.Trim();
+                foreach (var row in sheet)
+                {
+                    var name = GetTerritoryName(row);
+                    if (string.IsNullOrWhiteSpace(name) ||
+                        (!string.IsNullOrWhiteSpace(normalizedSearch) &&
+                         !name.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) &&
+                         !row.RowId.ToString().Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    var enabled = selected.Contains(row.RowId);
+                    if (!ImGui.Checkbox($"{name} ({row.RowId})##{id}-{row.RowId}", ref enabled))
+                        continue;
+
+                    if (enabled)
+                        selected.Add(row.RowId);
+                    else
+                        selected.Remove(row.RowId);
+                    setter(string.Join(", ", selected.Order()));
+                    Plugin.Config.Save();
+                }
+            }
+            ImGui.EndChild();
+        }
+
+        if (ImGui.TreeNode($"手动编辑地图 ID##{id}"))
+        {
+            ImGui.SetNextItemWidth(420);
+            var buffer = value;
+            if (ImGui.InputText($"英文逗号分隔##{id}", ref buffer, 2048))
+            {
+                setter(buffer);
+                Plugin.Config.Save();
+            }
+            ImGui.TreePop();
+        }
+        ImGui.EndCombo();
     }
 
     internal static void DrawDutySelector(
@@ -582,6 +722,10 @@ internal sealed unsafe class BasicFeatures : IDisposable
         ImGui.InputText($"搜索##{id}", ref search, 128);
         ImGui.SameLine();
         ImGui.TextDisabled($"已选择 {selected.Count} 项");
+        ImGui.SameLine();
+        var selectedOnly = dutySelectedOnly.GetValueOrDefault(id);
+        if (ImGui.Checkbox($"仅显示已选##{id}", ref selectedOnly))
+            dutySelectedOnly[id] = selectedOnly;
 
         var sheet = Plugin.Data.GetExcelSheet<ContentFinderCondition>();
         if (sheet == null)
@@ -589,23 +733,29 @@ internal sealed unsafe class BasicFeatures : IDisposable
 
         if (ImGui.BeginChild(
                 id,
-                new System.Numerics.Vector2(0, 220),
+                new System.Numerics.Vector2(0, 280),
                 true))
         {
             var normalizedSearch = search.Trim();
             foreach (var row in sheet)
             {
                 var name = row.Name.ToString();
+                var category = row.ContentType.RowId == 0
+                    ? string.Empty
+                    : row.ContentType.Value.Name.ToString();
                 if (string.IsNullOrWhiteSpace(name) ||
+                    (selectedOnly && !selected.Contains(row.RowId)) ||
                     (!string.IsNullOrWhiteSpace(normalizedSearch) &&
                      !name.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) &&
+                     !category.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) &&
                      !row.RowId.ToString().Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase)))
                 {
                     continue;
                 }
 
                 var enabled = selected.Contains(row.RowId);
-                if (!ImGui.Checkbox($"{name} ({row.RowId})##{id}-{row.RowId}", ref enabled))
+                var prefix = string.IsNullOrWhiteSpace(category) ? string.Empty : $"[{category}] ";
+                if (!ImGui.Checkbox($"{prefix}{name} ({row.RowId})##{id}-{row.RowId}", ref enabled))
                     continue;
 
                 if (enabled)
@@ -617,6 +767,39 @@ internal sealed unsafe class BasicFeatures : IDisposable
         }
         ImGui.EndChild();
         Plugin.DrawHelp(help);
+    }
+
+    internal static string GetTerritoryLabel(uint territoryId)
+    {
+        var sheet = Plugin.Data.GetExcelSheet<TerritoryType>();
+        if (sheet == null || !sheet.TryGetRow(territoryId, out var row))
+            return territoryId == 0 ? "请选择地图" : $"未知地图 ({territoryId})";
+
+        var name = GetTerritoryName(row);
+        return string.IsNullOrWhiteSpace(name)
+            ? $"未知地图 ({territoryId})"
+            : $"{name} ({territoryId})";
+    }
+
+    internal static string GetTerritoryName(TerritoryType row)
+    {
+        if (row.PlaceName.RowId != 0)
+        {
+            var name = row.PlaceName.Value.Name.ToString();
+            if (!string.IsNullOrWhiteSpace(name))
+                return name;
+        }
+
+        if (row.ContentFinderCondition.RowId != 0)
+            return row.ContentFinderCondition.Value.Name.ToString();
+        return string.Empty;
+    }
+
+    private sealed class MapRuleEditorState
+    {
+        public string TerritorySearch = string.Empty;
+        public string DisablePluginSearch = string.Empty;
+        public string EnablePluginSearch = string.Empty;
     }
 
     private static List<string> ParseList(string value) =>

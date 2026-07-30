@@ -50,7 +50,7 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         char arg5,
         int arg6);
     private delegate byte DiveTeleportDelegate(nint context, nint data1, nint data2, byte arg4);
-    private delegate long SelfResurrectDelegate(GameObject* player, float x, float y, float z);
+    private delegate void SelfResurrectDelegate(GameObject* player, float x, float y, float z);
     private delegate nint ForcedActionDelegate(
         GameObject* gameObject,
         float x,
@@ -86,6 +86,8 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
     private readonly Hook<StatusManagerDelegate>? statusManagerHook;
     private readonly Hook<StatusPacketDelegate>? statusPacketHook;
     private nint diveTeleportContext;
+    private bool mouseTeleportArmed;
+    private bool mouseTeleportClickReleased;
 
     public AdvancedToolsFeature()
     {
@@ -212,10 +214,14 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             "扩展突进技能距离",
             Plugin.Config.Advanced.GapCloserRange,
             value => Plugin.Config.Advanced.GapCloserRange = value);
-        DrawToggle(
-            "自我复活抑制",
-            Plugin.Config.Advanced.SelfResurrect,
-            value => Plugin.Config.Advanced.SelfResurrect = value);
+        if (DrawToggle(
+                "原地复活",
+                Plugin.Config.Advanced.SelfResurrect,
+                value => Plugin.Config.Advanced.SelfResurrect = value))
+        {
+            UpdateHookStates();
+        }
+        Plugin.DrawHelp("野外不可用；副本内死亡后需手动点击“返回”。");
         DrawToggle(
             "防坠落",
             Plugin.Config.Advanced.NoFall,
@@ -256,13 +262,18 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
 
         ImGui.Separator();
         if (ImGui.Button("传送到鼠标位置", new Vector2(-1f, 0f)))
-            TeleportToMouse();
+            ArmMouseTeleport();
+        if (mouseTeleportArmed)
+            ImGui.TextColored(new Vector4(0.35f, 0.85f, 1f, 1f), "选点中：左键传送，右键取消。");
+        else
+            ImGui.TextDisabled("点击按钮或使用 /ktb mouse，然后在游戏地面左键选点。");
 
         if (ImGui.Button("传送到地图旗标"))
             TeleportToFlag();
         ImGui.SameLine();
         if (ImGui.Button("触发无敌"))
             TriggerInvincibility();
+        ImGui.TextDisabled("指令：/ktb invincible");
 
         if (diveTeleportHook == null)
             ImGui.TextDisabled("当前游戏版本无法使用潜水传送。");
@@ -429,19 +440,20 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         statusPacketHook!.Original(entityId, packet, isReplayGroup, isFirstHalf);
     }
 
-    private long SelfResurrectDetour(GameObject* player, float x, float y, float z)
+    private void SelfResurrectDetour(GameObject* player, float x, float y, float z)
     {
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
-        if (Enabled(settings => settings.SelfResurrect) &&
+        if (Plugin.ProtectedFeaturesUnlocked &&
+            Plugin.Config.Advanced.SelfResurrect &&
             !Plugin.ClientState.IsPvP &&
             localPlayer != null &&
             localPlayer.IsDead &&
             (nint)player == localPlayer.Address)
         {
-            return 0;
+            return;
         }
 
-        return selfResurrectHook!.Original(player, x, y, z);
+        selfResurrectHook!.Original(player, x, y, z);
     }
 
     private long NoFallDetour(long arg1, uint flags)
@@ -478,22 +490,88 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         return diveTeleportHook!.Original(context, data1, data2, arg4);
     }
 
-    private void TeleportToMouse()
+    public void ArmMouseTeleport()
     {
-        if (!Plugin.ProtectedFeaturesUnlocked ||
-            !Plugin.Config.Features.AdvancedTools)
+        if (!Plugin.ProtectedFeaturesUnlocked)
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 请先解锁受保护的高级工具。");
             return;
+        }
+
+        if (!Plugin.Config.Features.AdvancedTools)
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 请先启用高级移动工具。");
+            return;
+        }
 
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
         if (localPlayer == null)
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 当前无法读取角色位置。");
+            return;
+        }
+
+        mouseTeleportArmed = true;
+        mouseTeleportClickReleased = false;
+        Plugin.Chat.Print("[Keita 工具箱] 请在游戏地面左键选择传送位置，右键取消。");
+    }
+
+    public void UpdateMouseTeleport()
+    {
+        if (!mouseTeleportArmed)
+            return;
+
+        if (!Plugin.ProtectedFeaturesUnlocked ||
+            !Plugin.Config.Features.AdvancedTools ||
+            Plugin.ObjectTable.LocalPlayer == null)
+        {
+            CancelMouseTeleport();
+            return;
+        }
+
+        if (!mouseTeleportClickReleased)
+        {
+            if (!ImGui.IsMouseDown(ImGuiMouseButton.Left) &&
+                !ImGui.IsMouseDown(ImGuiMouseButton.Right))
+            {
+                mouseTeleportClickReleased = true;
+            }
+            return;
+        }
+
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+        {
+            CancelMouseTeleport();
+            return;
+        }
+
+        var io = ImGui.GetIO();
+        if (!ImGui.IsMouseClicked(ImGuiMouseButton.Left) || io.WantCaptureMouse)
             return;
 
         var position = Vector3.Zero;
-        if (!Plugin.GameGui.ScreenToWorld(ImGui.GetIO().MousePos, out position, 100000f))
+        if (!Plugin.GameGui.ScreenToWorld(io.MousePos, out position, 100000f))
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 该位置没有可传送的地面，请重新选择。");
+            return;
+        }
+
+        var localPlayer = Plugin.ObjectTable.LocalPlayer!;
+        ((GameObject*)localPlayer.Address)->SetPosition(position.X, position.Y, position.Z);
+        mouseTeleportArmed = false;
+        mouseTeleportClickReleased = false;
+        Plugin.Chat.Print($"[Keita 工具箱] 已传送到 {position.X:F1}, {position.Y:F1}, {position.Z:F1}。");
+        Debug($"Teleported to mouse position {position}.");
+    }
+
+    private void CancelMouseTeleport()
+    {
+        if (!mouseTeleportArmed)
             return;
 
-        ((GameObject*)localPlayer.Address)->SetPosition(position.X, position.Y, position.Z);
-        Debug($"Teleported to mouse position {position}.");
+        mouseTeleportArmed = false;
+        mouseTeleportClickReleased = false;
+        Plugin.Chat.Print("[Keita 工具箱] 已取消鼠标位置传送。");
     }
 
     private void TeleportToFlag()
@@ -513,15 +591,28 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         SendDiveTeleport(new Vector3(marker.XFloat, 0f, marker.YFloat));
     }
 
-    private void TriggerInvincibility()
+    public void TriggerInvincibility()
     {
-        if (!Plugin.ProtectedFeaturesUnlocked ||
-            !Plugin.Config.Features.AdvancedTools)
+        if (!Plugin.ProtectedFeaturesUnlocked)
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 请先解锁受保护的高级工具。");
             return;
+        }
+
+        if (!Plugin.Config.Features.AdvancedTools)
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 请先启用高级移动工具。");
+            return;
+        }
 
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
-        if (localPlayer != null)
-            SendDiveTeleport(localPlayer.Position);
+        if (localPlayer == null)
+        {
+            Plugin.Chat.PrintError("[Keita 工具箱] 当前无法读取角色位置。");
+            return;
+        }
+
+        SendDiveTeleport(localPlayer.Position);
     }
 
     private void SendDiveTeleport(Vector3 position)
@@ -573,14 +664,15 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             position.Z);
     }
 
-    private static void DrawToggle(string label, bool value, Action<bool> setter)
+    private static bool DrawToggle(string label, bool value, Action<bool> setter)
     {
         var changed = value;
         if (!ImGui.Checkbox(label, ref changed))
-            return;
+            return false;
 
         setter(changed);
         Plugin.Config.Save();
+        return true;
     }
 
     private static Hook<T>? CreateHook<T>(string name, string signature, T detour)
@@ -608,7 +700,9 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             actionRangeHook,
             advancedEnabled ||
             (protectionUnlocked && Plugin.Config.Features.FrontlineRemoteInteraction));
-        SetHookEnabled(selfResurrectHook, advancedEnabled);
+        SetHookEnabled(
+            selfResurrectHook,
+            protectionUnlocked && Plugin.Config.Advanced.SelfResurrect);
         SetHookEnabled(noFallHook, advancedEnabled);
         SetHookEnabled(antiKnockbackHook, advancedEnabled);
         SetHookEnabled(diveTeleportHook, advancedEnabled);
@@ -622,7 +716,11 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             statusPacketHook,
             protectionUnlocked && Plugin.Config.Features.StatusBlock);
         if (!advancedEnabled)
+        {
             diveTeleportContext = nint.Zero;
+            if (mouseTeleportArmed)
+                CancelMouseTeleport();
+        }
     }
 
     private static void SetHookEnabled<T>(Hook<T>? hook, bool enabled)
