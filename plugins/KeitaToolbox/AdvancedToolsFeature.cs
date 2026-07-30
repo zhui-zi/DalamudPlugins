@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using LuminaAction = Lumina.Excel.Sheets.Action;
@@ -36,6 +38,10 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         "4C 8B DC 55 49 8D AB ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? ?? ?? 49 89 73";
     private const string StatusPacketSignature =
         "48 8B C4 44 88 48 ?? 55 57";
+    private const string NormalMovementSignature =
+        "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B F9 41 8B D8";
+    private const string CombatMovementSignature =
+        "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B F9 41 8B F0";
 
     private delegate float SpeedDelegate(nint arg1);
     private delegate nint MovePermissionDelegate(nint arg1, uint actionId, int arg3, int arg4);
@@ -64,6 +70,7 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         StatusEffectList* packet,
         bool isReplayGroup,
         bool isFirstHalf);
+    private delegate nint MovementPacketDelegate(nuint context, nint data, uint length);
 
     private readonly HashSet<uint> gapCloserActions = [];
     private static readonly HashSet<uint> BlockedStatusIds =
@@ -85,6 +92,8 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
     private readonly Hook<ForcedActionDelegate>? forcedActionHook;
     private readonly Hook<StatusManagerDelegate>? statusManagerHook;
     private readonly Hook<StatusPacketDelegate>? statusPacketHook;
+    private readonly Hook<MovementPacketDelegate>? normalMovementHook;
+    private readonly Hook<MovementPacketDelegate>? combatMovementHook;
     private nint diveTeleportContext;
     private bool mouseTeleportArmed;
     private bool mouseTeleportClickReleased;
@@ -141,11 +150,21 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             "status block packet",
             StatusPacketSignature,
             StatusPacketDetour);
+        normalMovementHook = CreateHook<MovementPacketDelegate>(
+            "normal movement Z offset",
+            NormalMovementSignature,
+            NormalMovementDetour);
+        combatMovementHook = CreateHook<MovementPacketDelegate>(
+            "combat movement Z offset",
+            CombatMovementSignature,
+            CombatMovementDetour);
         UpdateHookStates();
     }
 
     public void Dispose()
     {
+        combatMovementHook?.Dispose();
+        normalMovementHook?.Dispose();
         statusPacketHook?.Dispose();
         statusManagerHook?.Dispose();
         forcedActionHook?.Dispose();
@@ -244,18 +263,36 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
                 Plugin.Config.Advanced.ZOffsetValue = 0f;
             Plugin.Config.Advanced.ZOffset = zOffset;
             Plugin.Config.Save();
+            UpdateHookStates();
         }
 
         if (Plugin.Config.Advanced.ZOffset)
         {
+            var deepDungeonMode = Plugin.Config.Advanced.DeepDungeonZOffsetMode;
+            if (ImGui.Checkbox("死宫特供模式", ref deepDungeonMode))
+            {
+                Plugin.Config.Advanced.DeepDungeonZOffsetMode = deepDungeonMode;
+                Plugin.Config.Save();
+                UpdateHookStates();
+            }
+            Plugin.DrawHelp(
+                "通过移动数据应用偏移；进入深层迷宫后，整十层以及特定第 99 层自动恢复正常高度。");
+
             var previous = Plugin.Config.Advanced.ZOffsetValue;
             var value = previous;
             if (ImGui.DragFloat("Z 轴偏移量", ref value, 0.1f, -10f, 10f, "%.1f"))
             {
                 value = Math.Clamp(value, -10f, 10f);
                 Plugin.Config.Advanced.ZOffsetValue = value;
-                ApplyVerticalOffset(value - previous);
+                if (!Plugin.Config.Advanced.DeepDungeonZOffsetMode)
+                    ApplyVerticalOffset(value - previous);
                 Plugin.Config.Save();
+            }
+
+            if (Plugin.Config.Advanced.DeepDungeonZOffsetMode &&
+                (normalMovementHook == null || combatMovementHook == null))
+            {
+                ImGui.TextDisabled("当前游戏版本无法使用死宫特供模式。");
             }
         }
 
@@ -444,6 +481,62 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         }
 
         statusPacketHook!.Original(entityId, packet, isReplayGroup, isFirstHalf);
+    }
+
+    private nint NormalMovementDetour(nuint context, nint data, uint length)
+    {
+        if (data != nint.Zero && ShouldApplyMovementZOffset())
+            ((float*)data)[3] += Plugin.Config.Advanced.ZOffsetValue;
+
+        return normalMovementHook!.Original(context, data, length);
+    }
+
+    private nint CombatMovementDetour(nuint context, nint data, uint length)
+    {
+        if (data != nint.Zero && ShouldApplyMovementZOffset())
+        {
+            ((float*)data)[4] += Plugin.Config.Advanced.ZOffsetValue;
+            ((float*)data)[7] += Plugin.Config.Advanced.ZOffsetValue;
+        }
+
+        return combatMovementHook!.Original(context, data, length);
+    }
+
+    private static bool ShouldApplyMovementZOffset()
+    {
+        if (!Enabled(settings =>
+                settings.ZOffset &&
+                settings.DeepDungeonZOffsetMode &&
+                Math.Abs(settings.ZOffsetValue) >= 0.001f))
+        {
+            return false;
+        }
+
+        if (!Plugin.Condition[ConditionFlag.InDeepDungeon])
+            return true;
+
+        var territorySheet = Plugin.Data.GetExcelSheet<Lumina.Excel.Sheets.TerritoryType>();
+        if (territorySheet == null ||
+            !territorySheet.TryGetRow(Plugin.ClientState.TerritoryType, out var territory))
+        {
+            return false;
+        }
+
+        if (territory.TerritoryIntendedUse.RowId != 31)
+            return true;
+
+        var eventFramework = EventFramework.Instance();
+        var deepDungeon = eventFramework == null
+            ? null
+            : eventFramework->GetInstanceContentDeepDungeon();
+        if (deepDungeon == null)
+            return false;
+
+        var floor = deepDungeon->Floor;
+        if (floor == 0 || floor % 10 == 0)
+            return false;
+
+        return Plugin.ClientState.TerritoryType is not 1108 and not 1290 || floor != 99;
     }
 
     private void SelfResurrectDetour(GameObject* player, float x, float y, float z)
@@ -795,6 +888,12 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         SetHookEnabled(
             statusPacketHook,
             protectionUnlocked && Plugin.Config.Features.StatusBlock);
+        var deepDungeonZOffsetEnabled =
+            advancedEnabled &&
+            Plugin.Config.Advanced.ZOffset &&
+            Plugin.Config.Advanced.DeepDungeonZOffsetMode;
+        SetHookEnabled(normalMovementHook, deepDungeonZOffsetEnabled);
+        SetHookEnabled(combatMovementHook, deepDungeonZOffsetEnabled);
         if (!advancedEnabled)
         {
             diveTeleportContext = nint.Zero;

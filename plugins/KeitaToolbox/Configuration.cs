@@ -186,6 +186,7 @@ public sealed class AdvancedToolsSettings
     public bool AntiKnockback { get; set; }
     public bool ZOffset { get; set; }
     public float ZOffsetValue { get; set; }
+    public bool DeepDungeonZOffsetMode { get; set; }
     public bool DebugLogging { get; set; }
 }
 
