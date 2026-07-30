@@ -32,14 +32,17 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
     private const long ReviveDelayMs = 1000;
     private const long ConfirmationTimeoutMs = 3000;
     private const long RetryDelayMs = 30000;
+    private const long FailureLogIntervalMs = 10000;
 
     private readonly Dictionary<uint, long> retryAfter = [];
+    private string runtimeStatus = "等待检测。";
     private uint pendingTargetEntityId;
     private long reviveAt;
     private uint confirmingTargetEntityId;
     private string confirmingTargetName = string.Empty;
     private long confirmUntil;
     private long nextUpdateAt;
+    private long nextFailureLogAt;
 
     public AutoReviveFeature()
     {
@@ -85,6 +88,7 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
 
         Plugin.DrawHelp(
             "仅在新月岛南征之章或北征之章生效。辅助药剂师使用“复活”，辅助白魔法师使用“魔复活”；范围 30 yalms，锁定后延迟 1 秒施放。");
+        Plugin.DrawHelp($"当前状态：{runtimeStatus}");
     }
 
     private void OnUpdate(IFramework _)
@@ -96,6 +100,9 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
 
         if (!Plugin.Config.Features.OccultPotAutoRevive || !InOccultFieldZone())
         {
+            runtimeStatus = Plugin.Config.Features.OccultPotAutoRevive
+                ? "等待进入新月岛南征之章或北征之章。"
+                : "功能已关闭。";
             ResetTransientState();
             retryAfter.Clear();
             return;
@@ -104,19 +111,41 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
         var reviveActionRowId = ResolveReviveAction(localPlayer);
         var reviveGeneralActionId = ResolveReviveGeneralAction(reviveActionRowId);
-        if (localPlayer is not { IsDead: false } ||
-            reviveGeneralActionId == 0 ||
-            !IsReviveActionUnlocked(reviveActionRowId) ||
-            Plugin.Condition[ConditionFlag.BetweenAreas] ||
+        if (localPlayer is not { IsDead: false })
+        {
+            runtimeStatus = "玩家不可用或已倒地。";
+            ResetTransientState();
+            return;
+        }
+
+        if (reviveGeneralActionId == 0)
+        {
+            runtimeStatus = "当前辅助职业不是辅助药剂师或辅助白魔法师。";
+            ResetTransientState();
+            return;
+        }
+
+        if (!IsReviveActionUnlocked(reviveActionRowId))
+        {
+            runtimeStatus = "当前辅助职业的复活技能尚未解锁。";
+            ResetTransientState();
+            return;
+        }
+
+        if (Plugin.Condition[ConditionFlag.BetweenAreas] ||
             Plugin.Condition[ConditionFlag.BetweenAreas51])
         {
+            runtimeStatus = "区域切换中。";
             ResetTransientState();
             return;
         }
 
         ConfirmPreviousRevive(localPlayer, now);
         if (confirmingTargetEntityId != 0)
+        {
+            runtimeStatus = $"正在确认对 {confirmingTargetName} 的复活。";
             return;
+        }
 
         var pending = FindPlayer(pendingTargetEntityId);
         if (!IsValidTarget(pending, localPlayer))
@@ -128,20 +157,21 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
         if (pending != null)
         {
             if (now < reviveAt)
+            {
+                runtimeStatus = $"已锁定 {pending.Name}，准备施放。";
                 return;
+            }
 
             var actionManager = ActionManager.Instance();
             var target = (ClientGameObject*)pending.Address;
             if (actionManager != null &&
                 target != null &&
-                actionManager->IsActionOffCooldown(
-                    ActionType.GeneralAction,
-                    reviveGeneralActionId) &&
                 actionManager->UseAction(
                     ActionType.GeneralAction,
                     reviveGeneralActionId,
                     pending.EntityId))
             {
+                runtimeStatus = $"已请求复活 {pending.Name}。";
                 confirmingTargetEntityId = pending.EntityId;
                 confirmingTargetName = pending.Name.ToString();
                 confirmUntil = now + ConfirmationTimeoutMs;
@@ -149,16 +179,29 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
                 return;
             }
 
+            runtimeStatus = $"复活 {pending.Name} 的请求被游戏拒绝，将重试。";
+            if (now >= nextFailureLogAt)
+            {
+                Plugin.Log.Warning(
+                    "Auto revive request rejected. Target={Target}, GeneralAction={ActionId}",
+                    pending.Name,
+                    reviveGeneralActionId);
+                nextFailureLogAt = now + FailureLogIntervalMs;
+            }
             reviveAt = now + ReviveDelayMs;
             return;
         }
 
         var nearest = FindNearestTarget(localPlayer, now);
         if (nearest == null)
+        {
+            runtimeStatus = "30 yalms 内没有可复活目标。";
             return;
+        }
 
         pendingTargetEntityId = nearest.EntityId;
         reviveAt = now + ReviveDelayMs;
+        runtimeStatus = $"已锁定 {nearest.Name}，准备施放。";
     }
 
     private void ConfirmPreviousRevive(IPlayerCharacter localPlayer, long now)
@@ -172,12 +215,16 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
         {
             retryAfter[confirmingTargetEntityId] = now + RetryDelayMs;
             Plugin.Chat.Print($"[Keita 工具箱] 已自动复活 {confirmingTargetName}。");
+            runtimeStatus = $"已自动复活 {confirmingTargetName}。";
             ResetConfirmation();
             return;
         }
 
         if (now >= confirmUntil)
+        {
+            runtimeStatus = "未确认到复活效果，重新检测。";
             ResetConfirmation();
+        }
     }
 
     private IPlayerCharacter? FindNearestTarget(IPlayerCharacter localPlayer, long now)
@@ -333,6 +380,8 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
         ResetTransientState();
         retryAfter.Clear();
         nextUpdateAt = 0;
+        nextFailureLogAt = 0;
+        runtimeStatus = "等待检测。";
     }
 
     private void ResetTransientState()
