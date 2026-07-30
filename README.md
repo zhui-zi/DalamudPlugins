@@ -6,6 +6,5 @@ Subscription URL:
 
 ## Plugins
 
-- **IME Garbage Fix** — Clears stale Windows IME composition input while neither FFXIV nor Dalamud is accepting text.
-- **Portrait Gear Sync** — Synchronizes gear sets and instant portraits after equipment or glamour changes, including gear shared across jobs.
-- **Rotation Solver Reborn zh-CN** — Localizes the primary UI and automatically rebuilds from the latest upstream release.
+- **Keita Toolbox** - Combines duty and recruitment automation, plugin and map gearset switching, trade protection, IME cleanup, portrait synchronization, Ayano tools, and I-Ching utilities.
+- **Rotation Solver Reborn zh-CN** - Localizes the primary UI and automatically rebuilds from the latest upstream release.

@@ -1,0 +1,14 @@
+{
+  "Author": "zhui-zi",
+  "Name": "Keita Toolbox",
+  "Punchline": "A unified collection of FFXIV quality-of-life tools.",
+  "Description": "Combines duty automation, recruitment tools, plugin and map gearset switching, trade protection, IME cleanup, portrait synchronization, Ayano tools, and I-Ching utilities.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "utility",
+    "automation",
+    "duty",
+    "movement",
+    "quality-of-life"
+  ]
+}
