@@ -3,7 +3,7 @@
     "Author": "zhui-zi",
     "Name": "Keita 工具箱",
     "InternalName": "KeitaToolbox",
-    "AssemblyVersion": "1.4.0.18",
+    "AssemblyVersion": "1.4.0.19",
     "Description": "提供任务与招募自动化、新月岛自动复活、插件及地图套装切换、交易保护、输入法清理、肖像同步以及高级移动和战斗辅助功能。",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
@@ -24,7 +24,7 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1785430211,
+    "LastUpdate": 1785430541,
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip"

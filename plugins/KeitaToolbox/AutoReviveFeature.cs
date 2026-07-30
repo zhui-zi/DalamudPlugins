@@ -175,12 +175,24 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
                 return;
             }
 
+            if (!actionManager->IsActionOffCooldown(ActionType.Action, reviveActionRowId))
+            {
+                runtimeStatus = $"已锁定 {pending.Name}，等待公共 CD 或技能冷却进入队列窗口。";
+                reviveAt = now + UpdateIntervalMs;
+                return;
+            }
+
             if (actionManager->UseAction(
                     ActionType.Action,
                     reviveActionRowId,
                     pending.EntityId))
             {
-                runtimeStatus = $"客户端已接受对 {pending.Name} 的复活请求，等待服务端效果。";
+                runtimeStatus =
+                    actionManager->ActionQueued &&
+                    actionManager->QueuedActionType == ActionType.Action &&
+                    actionManager->QueuedActionId == reviveActionRowId
+                        ? $"已将对 {pending.Name} 的复活排入技能队列。"
+                        : $"客户端已接受对 {pending.Name} 的复活请求，等待服务端效果。";
                 confirmingTargetEntityId = pending.EntityId;
                 confirmingTargetName = pending.Name.ToString();
                 confirmUntil = now + ConfirmationTimeoutMs;
