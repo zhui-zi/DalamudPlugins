@@ -175,13 +175,6 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
                 return;
             }
 
-            if (!actionManager->IsActionOffCooldown(ActionType.Action, reviveActionRowId))
-            {
-                runtimeStatus = "复活技能冷却中。";
-                reviveAt = now + ReviveDelayMs;
-                return;
-            }
-
             if (actionManager->UseAction(
                     ActionType.Action,
                     reviveActionRowId,
