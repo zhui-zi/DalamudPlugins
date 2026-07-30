@@ -40,7 +40,6 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IGameInteropProvider Interop { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static INotificationManager Notifications { get; private set; } = null!;
-    [PluginService] internal static IUnlockState UnlockState { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
     internal static Configuration Config { get; private set; } = null!;

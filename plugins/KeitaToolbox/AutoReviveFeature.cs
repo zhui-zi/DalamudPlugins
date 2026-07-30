@@ -19,6 +19,8 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
     private const uint NorthHornTerritoryId = 1346;
     private const uint PhantomChemistReviveActionId = 41634;
     private const uint PhantomWhiteMageReviveActionId = 49070;
+    private const uint PhantomChemistReviveGeneralActionId = 33;
+    private const uint PhantomWhiteMageReviveGeneralActionId = 34;
     private const byte PhantomChemistJobId = 10;
     private const byte PhantomWhiteMageJobId = 17;
     private const uint PhantomChemistStatusId = 4367;
@@ -100,10 +102,11 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
         }
 
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
-        var reviveActionId = ResolveReviveAction(localPlayer);
+        var reviveActionRowId = ResolveReviveAction(localPlayer);
+        var reviveGeneralActionId = ResolveReviveGeneralAction(reviveActionRowId);
         if (localPlayer is not { IsDead: false } ||
-            reviveActionId == 0 ||
-            !IsReviveActionUnlocked(reviveActionId) ||
+            reviveGeneralActionId == 0 ||
+            !IsReviveActionUnlocked(reviveActionRowId) ||
             Plugin.Condition[ConditionFlag.BetweenAreas] ||
             Plugin.Condition[ConditionFlag.BetweenAreas51])
         {
@@ -131,10 +134,12 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
             var target = (ClientGameObject*)pending.Address;
             if (actionManager != null &&
                 target != null &&
-                actionManager->IsActionOffCooldown(ActionType.Action, reviveActionId) &&
+                actionManager->IsActionOffCooldown(
+                    ActionType.GeneralAction,
+                    reviveGeneralActionId) &&
                 actionManager->UseAction(
-                    ActionType.Action,
-                    reviveActionId,
+                    ActionType.GeneralAction,
+                    reviveGeneralActionId,
                     pending.EntityId))
             {
                 confirmingTargetEntityId = pending.EntityId;
@@ -260,6 +265,14 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
         return 0;
     }
 
+    private static uint ResolveReviveGeneralAction(uint actionRowId) =>
+        actionRowId switch
+        {
+            PhantomChemistReviveActionId => PhantomChemistReviveGeneralActionId,
+            PhantomWhiteMageReviveActionId => PhantomWhiteMageReviveGeneralActionId,
+            _ => 0u,
+        };
+
     private static bool IsReviveActionUnlocked(uint actionId)
     {
         var state = PublicContentOccultCrescent.GetState();
@@ -284,8 +297,7 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
             if (entry.Action.RowId != actionId)
                 continue;
 
-            return state->SupportJobLevels[jobId] >= entry.LevelUnlock &&
-                   Plugin.UnlockState.IsActionUnlocked(entry.Action.Value);
+            return state->SupportJobLevels[jobId] >= entry.LevelUnlock;
         }
 
         return false;
