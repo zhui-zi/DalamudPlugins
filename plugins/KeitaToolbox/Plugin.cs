@@ -274,7 +274,9 @@ public sealed class Plugin : IDalamudPlugin
     internal static void DrawHelp(string text)
     {
         ImGui.Indent();
+        ImGui.PushTextWrapPos();
         ImGui.TextDisabled(text);
+        ImGui.PopTextWrapPos();
         ImGui.Unindent();
         ImGui.Spacing();
     }

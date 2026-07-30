@@ -82,7 +82,7 @@ internal sealed unsafe class AutoReviveFeature : IDisposable
         }
 
         Plugin.DrawHelp(
-            "仅在新月岛南方海角或北方海角生效。辅助药剂师使用“复活”，辅助白魔法师使用“魔复活”；范围 30 yalms，锁定后延迟 1 秒施放。");
+            "仅在新月岛南征之章或北征之章生效。辅助药剂师使用“复活”，辅助白魔法师使用“魔复活”；范围 30 yalms，锁定后延迟 1 秒施放。");
     }
 
     private void OnUpdate(IFramework _)
