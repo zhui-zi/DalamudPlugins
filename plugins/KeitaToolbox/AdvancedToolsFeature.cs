@@ -42,12 +42,12 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
     private delegate long SkillPostActionMoveDelegate(long arg1);
     private delegate float ActionRangeDelegate(uint actionId);
     private delegate long FallCheckDelegate(long arg1, uint flags);
-    private delegate long KnockbackDelegate(
-        long gameObject,
+    private delegate void KnockbackDelegate(
+        nint gameObject,
         float rotation,
         float distance,
-        long duration,
-        char arg5,
+        float duration,
+        byte arg5,
         int arg6);
     private delegate byte DiveTeleportDelegate(nint context, nint data1, nint data2, byte arg4);
     private delegate void SelfResurrectDelegate(GameObject* player, float x, float y, float z);
@@ -226,10 +226,13 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             "防坠落",
             Plugin.Config.Advanced.NoFall,
             value => Plugin.Config.Advanced.NoFall = value);
-        DrawToggle(
-            "防击退",
-            Plugin.Config.Advanced.AntiKnockback,
-            value => Plugin.Config.Advanced.AntiKnockback = value);
+        if (DrawToggle(
+                "防击退",
+                Plugin.Config.Advanced.AntiKnockback,
+                value => Plugin.Config.Advanced.AntiKnockback = value))
+        {
+            UpdateHookStates();
+        }
 
         var zOffset = Plugin.Config.Advanced.ZOffset;
         if (ImGui.Checkbox("Z 轴偏移", ref zOffset))
@@ -464,18 +467,18 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         return noFallHook!.Original(arg1, flags);
     }
 
-    private long AntiKnockbackDetour(
-        long gameObject,
+    private void AntiKnockbackDetour(
+        nint gameObject,
         float rotation,
         float distance,
-        long duration,
-        char arg5,
+        float duration,
+        byte arg5,
         int arg6)
     {
         if (Enabled(settings => settings.AntiKnockback))
             distance = 0f;
 
-        return antiKnockbackHook!.Original(
+        antiKnockbackHook!.Original(
             gameObject,
             rotation,
             distance,
@@ -737,7 +740,9 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             selfResurrectHook,
             protectionUnlocked && Plugin.Config.Advanced.SelfResurrect);
         SetHookEnabled(noFallHook, advancedEnabled);
-        SetHookEnabled(antiKnockbackHook, advancedEnabled);
+        SetHookEnabled(
+            antiKnockbackHook,
+            advancedEnabled && Plugin.Config.Advanced.AntiKnockback);
         SetHookEnabled(diveTeleportHook, advancedEnabled);
         SetHookEnabled(
             forcedActionHook,
