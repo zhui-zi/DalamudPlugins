@@ -58,12 +58,12 @@
     "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
     "AcceptsFeedback": true,
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/RotationSolver/latest.zip",
-    "AssemblyVersion": "7.5.5.8",
+    "AssemblyVersion": "7.5.5.9",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/RotationSolver/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/RotationSolver/latest.zip",
-    "TestingAssemblyVersion": "7.5.5.8",
-    "Changelog": "## What's Changed\r\n* Fixes for Phantom Black Mage, Folio CE immunity handling by @LTS-FFXIV in https://github.com/FFXIV-CombatReborn/RotationSolverReborn/pull/1328\r\n\r\n\r\n**Full Changelog**: https://github.com/FFXIV-CombatReborn/RotationSolverReborn/compare/7.5.5.7...7.5.5.8",
+    "TestingAssemblyVersion": "7.5.5.9",
+    "Changelog": "## What's Changed\r\n* Fixes for Phantom Ninja by @LTS-FFXIV in https://github.com/FFXIV-CombatReborn/RotationSolverReborn/pull/1329\r\n\r\n\r\n**Full Changelog**: https://github.com/FFXIV-CombatReborn/RotationSolverReborn/compare/7.5.5.8...7.5.5.9",
     "DownloadCount": 0,
-    "LastUpdate": 1785474685
+    "LastUpdate": 1785516557
   }
 ]
