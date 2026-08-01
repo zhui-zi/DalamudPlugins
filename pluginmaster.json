@@ -28,42 +28,5 @@
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip"
-  },
-  {
-    "Author": "The Combat Reborn Team / zhui-zi",
-    "Name": "Rotation Solver Reborn 汉化版",
-    "InternalName": "RotationSolver",
-    "Description": "逐帧分析战斗信息并选择最佳技能。\n\n插件会分析队伍与敌对目标状态、技能冷却、角色资源与位置、目标咏唱、连击、战斗时长和玩家等级等信息，然后在热键栏上高亮最佳技能或协助点击。\n\n本插件面向一般战斗，并非专为零式或绝境战内容设计，请谨慎使用。",
-    "ApplicableVersion": "any",
-    "DalamudApiLevel": 15,
-    "TestingDalamudApiLevel": 15,
-    "Tags": [
-      "combat",
-      "rotation",
-      "auto",
-      "solver",
-      "pve",
-      "pvp"
-    ],
-    "CategoryTags": [
-      "jobs"
-    ],
-    "LoadRequiredState": 0,
-    "LoadSync": false,
-    "CanUnloadAsync": false,
-    "LoadPriority": 0,
-    "IsTestingExclusive": false,
-    "IconUrl": "https://raw.githubusercontent.com/FFXIV-CombatReborn/RebornAssets/main/IconAssets/RSR_Icon.png",
-    "Punchline": "逐帧分析战斗信息并选择最佳技能。",
-    "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
-    "AcceptsFeedback": true,
-    "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/RotationSolver/latest.zip",
-    "AssemblyVersion": "7.5.5.11",
-    "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/RotationSolver/latest.zip",
-    "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/RotationSolver/latest.zip",
-    "TestingAssemblyVersion": "7.5.5.11",
-    "Changelog": "## What's Changed\r\n* Fix for Phantom Summoner level checks by @LTS-FFXIV in https://github.com/FFXIV-CombatReborn/RotationSolverReborn/pull/1331\r\n\r\n\r\n**Full Changelog**: https://github.com/FFXIV-CombatReborn/RotationSolverReborn/compare/7.5.5.10...7.5.5.11",
-    "DownloadCount": 0,
-    "LastUpdate": 1785528928
   }
 ]
