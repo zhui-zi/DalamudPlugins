@@ -257,6 +257,7 @@ internal sealed class OccultPotFeature : IDisposable
 
     private const uint  PhantomChemistReviveActionID  = 41634;
     private const uint  PhantomWhiteMageReviveActionID = 49070;
+    private const uint  AutoAttackActionID             = 7;
     private const uint  PhantomChemistStatusID    = 4367;
     private const uint  PhantomWhiteMageStatusID  = 5329;
     private const uint  RaiseStatusID          = 148;
@@ -1719,7 +1720,10 @@ internal sealed class OccultPotFeature : IDisposable
             return false;
 
         var gameObject = (GameObject*)enemy.Address;
-        return gameObject != null && gameObject->FateId == activePotFateID;
+        return gameObject != null &&
+               gameObject->BattleNpcSubKind == BattleNpcSubKind.Combatant &&
+               gameObject->FateId == activePotFateID &&
+               ActionManager.CanUseActionOnTarget(AutoAttackActionID, gameObject);
     }
 
     private bool TryGetCurrentPots(out Pot north, out Pot south)
@@ -2624,7 +2628,11 @@ internal sealed class OccultPotFeature : IDisposable
         if (keepMountedUntilTreasure)
             EnqueueUndergroundMoveTo(positions[index], 3f);
         else
-            EnqueueMoveTo(positions[index], 3f, mount: true);
+            EnqueueMoveTo(
+                positions[index],
+                3f,
+                mount: true,
+                timeoutMs: territory == OccultNorthTerritory ? 240000 : 90000);
         if (!keepMountedUntilTreasure)
         {
             autoDigTask.Enqueue(WaitDismounted(5000));
