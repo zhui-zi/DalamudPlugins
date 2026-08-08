@@ -94,6 +94,15 @@ internal sealed class OccultPotFeature : IDisposable
     private ushort     aeTargetSelectorPotFateID;
     private int        aeTargetSelectorEnableAttempts;
     private long       aeTargetSelectorVerifyAt;
+    private bool       aeTargetSelectorEnabledByAssistant;
+    private Assembly?  aeTargetSelectorAssembly;
+    private MethodInfo? aeTargetSelectorRefreshMethod;
+    private object?     aeTargetSelectorModule;
+    private MethodInfo? aeTargetSelectorUpdateMethod;
+    private PropertyInfo? aePlayerOptionsInstanceProperty;
+    private FieldInfo?  aePlayerOptionsStopField;
+    private bool        aeTargetSelectorBridgeResolved;
+    private bool        aeTargetSelectorBridgeWarningLogged;
     private bool       undergroundDangerActive;
     private bool       allowUndergroundPositionUpdate;
     private TaskHelper? undergroundTestTask;
@@ -858,7 +867,9 @@ internal sealed class OccultPotFeature : IDisposable
             }
 
             ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                "开启时仅发送 /aeTargetSelector on/off；不会修改选择模式或其他 AEAssist 设置。\n关闭后不再发送指令，也不会改变当前目标选择器状态。");
+                "开启时控制 /aeTargetSelector on/off，并仅驱动 AEAssist 自己的目标选择模块；" +
+                "不会启动 AEAssist 战斗循环，也不会修改选择模式或其他设置。\n" +
+                "关闭后不再发送指令，也不会改变当前目标选择器状态。");
         }
 
         ConfigUIAutoRevive();
@@ -1675,6 +1686,9 @@ internal sealed class OccultPotFeature : IDisposable
             return;
         }
 
+        if (activePotFateID != 0)
+            DriveAeTargetSelector();
+
         if (activePotFateID == aeTargetSelectorPotFateID)
         {
             VerifyAeTargetSelectorState(activePotFateID);
@@ -1684,16 +1698,26 @@ internal sealed class OccultPotFeature : IDisposable
         if (aeTargetSelectorPotFateID != 0)
         {
             var endedFateID = aeTargetSelectorPotFateID;
-            var accepted = ProcessAeTargetSelectorCommand("/aeTargetSelector off");
-            var reflected = TryAccessAeTargetSelectorEnabled(false, out var internalEnabled);
-            DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Magic Pot FATE 0x{endedFateID:X} removed; " +
-                $"AEAssist target selector off command accepted={accepted}, reflected={reflected}, internal={internalEnabled}");
+            if (aeTargetSelectorEnabledByAssistant)
+            {
+                var accepted = ProcessAeTargetSelectorCommand("/aeTargetSelector off");
+                var reflected = TryAccessAeTargetSelectorEnabled(false, out var internalEnabled);
+                DService.Instance().Log.Information(
+                    $"[OccultPotNotifier] Magic Pot FATE 0x{endedFateID:X} removed; " +
+                    $"AEAssist target selector off command accepted={accepted}, reflected={reflected}, internal={internalEnabled}");
+            }
+            else
+            {
+                DService.Instance().Log.Information(
+                    $"[OccultPotNotifier] Magic Pot FATE 0x{endedFateID:X} removed; " +
+                    "AEAssist target selector left enabled because it was already on");
+            }
         }
 
         aeTargetSelectorPotFateID = activePotFateID;
         aeTargetSelectorEnableAttempts = 0;
         aeTargetSelectorVerifyAt = 0;
+        aeTargetSelectorEnabledByAssistant = false;
         if (activePotFateID == 0) return;
 
 
@@ -1705,6 +1729,166 @@ internal sealed class OccultPotFeature : IDisposable
         aeTargetSelectorPotFateID = 0;
         aeTargetSelectorEnableAttempts = 0;
         aeTargetSelectorVerifyAt = 0;
+        aeTargetSelectorEnabledByAssistant = false;
+    }
+
+    private Assembly? GetAeTargetSelectorAssembly()
+    {
+        if (!DService.Instance().Command.Commands.TryGetValue("/aeTargetSelector", out var commandInfo))
+            return null;
+
+        return commandInfo.Handler.Method.DeclaringType?.Assembly;
+    }
+
+    private bool EnsureAeTargetSelectorBridge(Assembly assembly)
+    {
+        if (!ReferenceEquals(aeTargetSelectorAssembly, assembly))
+        {
+            aeTargetSelectorAssembly = assembly;
+            aeTargetSelectorRefreshMethod = null;
+            aeTargetSelectorModule = null;
+            aeTargetSelectorUpdateMethod = null;
+            aePlayerOptionsInstanceProperty = null;
+            aePlayerOptionsStopField = null;
+            aeTargetSelectorBridgeResolved = false;
+            aeTargetSelectorBridgeWarningLogged = false;
+        }
+
+        if (aeTargetSelectorBridgeResolved)
+            return aeTargetSelectorRefreshMethod != null &&
+                   aeTargetSelectorModule != null &&
+                   aeTargetSelectorUpdateMethod != null;
+
+        aeTargetSelectorBridgeResolved = true;
+
+        try
+        {
+            const BindingFlags staticFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            const BindingFlags instanceFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+
+            var targetModuleType = assembly.GetType(
+                "AEAssist.CombatRoutine.Module.Target.TargetSelectorModule",
+                false);
+            var coreType = assembly.GetType("AEAssist.Core", false);
+            var playerOptionsType = assembly.GetType(
+                "AEAssist.CombatRoutine.Module.PlayerOptions",
+                false);
+            if (targetModuleType == null || coreType == null || playerOptionsType == null)
+                return false;
+
+            MethodInfo? resolveMethod = null;
+            foreach (var method in coreType.GetMethods(staticFlags))
+            {
+                if (method.Name == "Resolve" && method.IsGenericMethodDefinition &&
+                    method.GetParameters().Length == 0)
+                {
+                    resolveMethod = method;
+                    break;
+                }
+            }
+
+            aeTargetSelectorModule = resolveMethod?.MakeGenericMethod(targetModuleType).Invoke(null, null);
+            aeTargetSelectorUpdateMethod = targetModuleType.GetMethod(
+                "OnUpdate",
+                instanceFlags,
+                null,
+                Type.EmptyTypes,
+                null);
+            aePlayerOptionsInstanceProperty = playerOptionsType.GetProperty("Instance", staticFlags);
+            aePlayerOptionsStopField = playerOptionsType.GetField("Stop", instanceFlags);
+
+            foreach (var type in assembly.GetTypes())
+            {
+                if (type.Namespace != "AEAssist.CombatRoutine.Module.Target" ||
+                    !type.IsAbstract || !type.IsSealed)
+                    continue;
+
+                var methods = type.GetMethods(staticFlags);
+                var isSelectorHelper = false;
+                foreach (var method in methods)
+                {
+                    if (method.GetParameters().Length == 0 &&
+                        method.ReturnType.FullName ==
+                        "Dalamud.Game.ClientState.Objects.Types.IBattleChara")
+                    {
+                        isSelectorHelper = true;
+                        break;
+                    }
+                }
+
+                if (!isSelectorHelper) continue;
+
+                foreach (var method in methods)
+                {
+                    if (method.ReturnType == typeof(void) && method.GetParameters().Length == 0)
+                    {
+                        aeTargetSelectorRefreshMethod = method;
+                        break;
+                    }
+                }
+
+                if (aeTargetSelectorRefreshMethod != null) break;
+            }
+        }
+        catch (Exception ex)
+        {
+            DService.Instance().Log.Warning(
+                $"[OccultPotNotifier] AEAssist target selector bridge setup failed: {ex.GetType().Name}");
+        }
+
+        return aeTargetSelectorRefreshMethod != null &&
+               aeTargetSelectorModule != null &&
+               aeTargetSelectorUpdateMethod != null;
+    }
+
+    private bool DriveAeTargetSelector()
+    {
+        try
+        {
+            var assembly = GetAeTargetSelectorAssembly();
+            if (assembly == null || !EnsureAeTargetSelectorBridge(assembly))
+            {
+                if (!aeTargetSelectorBridgeWarningLogged)
+                {
+                    aeTargetSelectorBridgeWarningLogged = true;
+                    DService.Instance().Log.Warning(
+                        "[OccultPotNotifier] AEAssist target selector runtime bridge is unavailable");
+                }
+
+                return false;
+            }
+
+            aeTargetSelectorRefreshMethod!.Invoke(null, null);
+
+            var playerOptions = aePlayerOptionsInstanceProperty?.GetValue(null);
+            var wasStopped = playerOptions != null &&
+                             aePlayerOptionsStopField?.GetValue(playerOptions) is true;
+            if (wasStopped)
+                aePlayerOptionsStopField!.SetValue(playerOptions, false);
+
+            try
+            {
+                aeTargetSelectorUpdateMethod!.Invoke(aeTargetSelectorModule, null);
+            }
+            finally
+            {
+                if (wasStopped)
+                    aePlayerOptionsStopField!.SetValue(playerOptions, true);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (!aeTargetSelectorBridgeWarningLogged)
+            {
+                aeTargetSelectorBridgeWarningLogged = true;
+                DService.Instance().Log.Warning(
+                    $"[OccultPotNotifier] AEAssist target selector runtime bridge failed: {ex.GetType().Name}");
+            }
+
+            return false;
+        }
     }
 
     private static bool ProcessAeTargetSelectorCommand(string command)
@@ -1794,6 +1978,12 @@ internal sealed class OccultPotFeature : IDisposable
         var enabledFinal = enabledAfterCommand;
         var reflected = enabledAfterCommand ||
                         TryAccessAeTargetSelectorEnabled(true, out enabledFinal);
+        if (!aeTargetSelectorEnabledByAssistant &&
+            (!readBefore || !enabledBefore) &&
+            (sent || reflected))
+            aeTargetSelectorEnabledByAssistant = true;
+
+        var runtimeDriven = DriveAeTargetSelector();
         aeTargetSelectorVerifyAt = Environment.TickCount64 + 1000;
 
         DService.Instance().Log.Information(
@@ -1802,7 +1992,7 @@ internal sealed class OccultPotFeature : IDisposable
             $"route={(useChatRoute ? "chat" : "command")}, sent={sent}, " +
             $"internalBefore={(readBefore ? enabledBefore : (bool?)null)}, " +
             $"internalAfterCommand={(readAfterCommand ? enabledAfterCommand : (bool?)null)}, " +
-            $"reflected={reflected}, internalFinal={enabledFinal}");
+            $"reflected={reflected}, internalFinal={enabledFinal}, runtimeDriven={runtimeDriven}");
     }
 
     private static string? GetAeTargetSelectorDtrText()
@@ -1826,20 +2016,25 @@ internal sealed class OccultPotFeature : IDisposable
         var dtrText = GetAeTargetSelectorDtrText();
 
         var internalReadable = TryAccessAeTargetSelectorEnabled(null, out var internalEnabled);
-        var enabled = internalReadable
-                          ? internalEnabled
-                          : !string.IsNullOrWhiteSpace(dtrText) &&
-                            !dtrText.Contains("Off", StringComparison.OrdinalIgnoreCase);
+        var switchEnabled = internalReadable
+                                ? internalEnabled
+                                : !string.IsNullOrWhiteSpace(dtrText) &&
+                                  !dtrText.Contains("Off", StringComparison.OrdinalIgnoreCase);
+        var runtimeDriven = DriveAeTargetSelector();
+        var enabled = switchEnabled && runtimeDriven;
         if (enabled)
         {
             DService.Instance().Log.Information(
                 $"[OccultPotNotifier] Magic Pot FATE 0x{activePotFateID:X}; " +
                 $"AEAssist target selector verified after attempt={aeTargetSelectorEnableAttempts}: " +
-                $"internal={(internalReadable ? internalEnabled : (bool?)null)}, dtr={dtrText}");
+                $"internal={(internalReadable ? internalEnabled : (bool?)null)}, dtr={dtrText}, " +
+                $"runtimeDriven={runtimeDriven}");
             return;
         }
 
         var state = string.IsNullOrWhiteSpace(dtrText) ? "DTR entry unavailable" : dtrText;
+        if (switchEnabled && !runtimeDriven)
+            state += ", runtime bridge unavailable";
         if (aeTargetSelectorEnableAttempts < 6)
         {
             // Direct dispatch can run before AEAssist finishes its territory-state refresh.
@@ -1856,7 +2051,7 @@ internal sealed class OccultPotFeature : IDisposable
         DService.Instance().Log.Warning(
             $"[OccultPotNotifier] Magic Pot FATE 0x{activePotFateID:X}; " +
             $"AEAssist target selector verification failed after {aeTargetSelectorEnableAttempts} attempts, state={state}");
-        NotifyHelper.Instance().NotificationWarning("AEAssist 自动选中未能开启，请确认目标选择器模块已加载");
+        NotifyHelper.Instance().NotificationWarning("AEAssist 自动选中未能开启，请确认目标选择器模块已加载且版本兼容");
     }
 
     private bool TryGetCurrentPots(out Pot north, out Pot south)
