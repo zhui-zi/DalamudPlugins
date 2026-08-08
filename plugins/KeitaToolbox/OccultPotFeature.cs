@@ -412,7 +412,7 @@ internal sealed class OccultPotFeature : IDisposable
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PostRefresh, "AreaMap", OnAreaMapRefresh);
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PostSetup,  "ContentsFinderConfirm", OnContentsFinderConfirm);
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PreDraw,    "ContentsFinderConfirm", OnContentsFinderConfirm);
-        WindowManager.Instance().PostDraw += OnPostDraw;
+        Plugin.PluginInterface.UiBuilder.Draw += OnPostDraw;
         Plugin.PluginInterface.UiBuilder.Draw += DrawOverlayWindow;
 
         DService.Instance().ClientState.TerritoryChanged += OnZoneChanged;
@@ -425,7 +425,7 @@ internal sealed class OccultPotFeature : IDisposable
         DService.Instance().ClientState.TerritoryChanged -= OnZoneChanged;
         DService.Instance().Chat.ChatMessage             -= OnChatMessage;
         GamePacketManager.Instance().Unreg(OnPreSendPacket);
-        WindowManager.Instance().PostDraw                -= OnPostDraw;
+        Plugin.PluginInterface.UiBuilder.Draw             -= OnPostDraw;
         Plugin.PluginInterface.UiBuilder.Draw             -= DrawOverlayWindow;
         DService.Instance().AddonLifecycle.UnregisterListener(OnAreaMapRefresh);
         DService.Instance().AddonLifecycle.UnregisterListener(OnContentsFinderConfirm);
@@ -980,9 +980,6 @@ internal sealed class OccultPotFeature : IDisposable
 
     private void DrawOverlayContents()
     {
-        ImGui.TextColored(KnownColor.LightSkyBlue.ToVector4(), "新月岛 魔法罐");
-        ImGui.Separator();
-
         var text = string.IsNullOrEmpty(displayText) ? "等待刷新数据…" : displayText;
         if (ImGui.Selectable(text) && displayPot != null)
             OpenPotMap(displayPot);
@@ -5260,9 +5257,12 @@ internal sealed class OccultPotFeature : IDisposable
         if (!config.ShowFastSwitcher) return;
 
         var agent = AgentMap.Instance();
-        if (agent == null ||
-            !IsOccultMapForTerritory(GameState.TerritoryType, agent->SelectedMapId))
-            return;
+        if (agent == null) return;
+
+        var displayedMapID = agent->SelectedMapId == 0
+                                 ? agent->CurrentMapId
+                                 : agent->SelectedMapId;
+        if (!IsOccultMapForTerritory(GameState.TerritoryType, displayedMapID)) return;
 
         var addon = (AtkUnitBase*)RaptureAtkUnitManager.Instance()->GetAddonByName("AreaMap");
         if (addon == null || !addon->IsVisible || addon->RootNode == null) return;
