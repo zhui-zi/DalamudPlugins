@@ -1,10 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.CN.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>1.4.0.20</Version>
+    <Version>1.5.1</Version>
     <AssemblyName>KeitaToolbox</AssemblyName>
     <RootNamespace>KeitaToolbox</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="OmenTools">
+      <HintPath>lib\OmenTools.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GuerrillaNtp">
+      <HintPath>lib\GuerrillaNtp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TinyPinyin">
+      <HintPath>lib\TinyPinyin.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <None Include="lib\OmenTools.dll" Link="OmenTools.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="lib\GuerrillaNtp.dll" Link="GuerrillaNtp.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="lib\TinyPinyin.dll" Link="TinyPinyin.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -25,6 +25,7 @@ public sealed class Configuration : IPluginConfiguration
     public CombatUtilitySettings CombatUtilities { get; set; } = new();
     public MapGearsetSettings MapGearset { get; set; } = new();
     public OccultPotSettings OccultPot { get; set; } = new();
+    public string OccultPotAssistantConfig { get; set; } = string.Empty;
     public AeAssistStartupSettings AeAssistStartup { get; set; } = new();
 
     [NonSerialized]

@@ -14,6 +14,7 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using OmenTools;
 
 namespace KeitaToolbox;
 
@@ -22,7 +23,7 @@ public sealed class Plugin : IDalamudPlugin
     private const string Command = "/keitatoolbox";
     private const string ShortCommand = "/ktb";
     private const string UnlockEndpoint =
-        "https://rotation-solver-release-monitor.zhuizi.workers.dev/toolbox/unlock";
+        "https://dalamudunlock.ff14.cafe/toolbox/unlock";
 
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
@@ -53,8 +54,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly PortraitGearSyncFeature? portraitFeature;
     private readonly AdvancedToolsFeature? advancedToolsFeature;
     private readonly MapGearsetFeature? mapGearsetFeature;
-    private readonly AutoReviveFeature? autoReviveFeature;
+    private readonly OccultPotFeature? occultPotFeature;
     private readonly AeAssistStartupFeature? aeAssistStartupFeature;
+    private readonly bool omenServicesInitialized;
     private readonly HttpClient unlockClient = new()
     {
         Timeout = TimeSpan.FromSeconds(10),
@@ -71,6 +73,16 @@ public sealed class Plugin : IDalamudPlugin
         if (Config.Migrate())
             Config.Save();
 
+        try
+        {
+            DService.Init(PluginInterface, () => new DServiceInitOptions());
+            omenServicesInitialized = true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to initialize the Magic Pot Assistant runtime.");
+        }
+
         basicFeatures = CreateFeature("general tools", () => new BasicFeatures());
         autoInviteFeature = CreateFeature("automatic party invite", () => new AutoInviteFeature());
         autoLeaveFeature = CreateFeature("automatic duty leave", () => new AutoLeaveFeature());
@@ -86,9 +98,12 @@ public sealed class Plugin : IDalamudPlugin
         mapGearsetFeature = CreateFeature(
             "automatic map gearset switch",
             () => new MapGearsetFeature());
-        autoReviveFeature = CreateFeature(
-            "Occult Crescent auto revive",
-            () => new AutoReviveFeature());
+        if (omenServicesInitialized)
+        {
+            occultPotFeature = CreateFeature(
+                "Magic Pot Assistant",
+                () => new OccultPotFeature());
+        }
         aeAssistStartupFeature = CreateFeature(
             "AEAssist startup automation",
             () => new AeAssistStartupFeature());
@@ -120,7 +135,7 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update -= OnFrameworkUpdate;
 
         aeAssistStartupFeature?.Dispose();
-        autoReviveFeature?.Dispose();
+        occultPotFeature?.Dispose();
         mapGearsetFeature?.Dispose();
         advancedToolsFeature?.Dispose();
         portraitFeature?.Dispose();
@@ -130,6 +145,17 @@ public sealed class Plugin : IDalamudPlugin
         basicFeatures?.Dispose();
         unlockClient.Dispose();
         Scheduler.Clear();
+        if (omenServicesInitialized)
+        {
+            try
+            {
+                DService.Uninit();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to dispose the Magic Pot Assistant runtime.");
+            }
+        }
 
         Log.Information("Keita Toolbox disabled.");
     }
@@ -182,6 +208,9 @@ public sealed class Plugin : IDalamudPlugin
                 advancedToolsFeature.TriggerInvincibility();
             return;
         }
+
+        if (occultPotFeature?.HandleCommand(trimmed) == true)
+            return;
 
         windowOpen = true;
     }
@@ -247,10 +276,10 @@ public sealed class Plugin : IDalamudPlugin
             });
             DrawTab("新月岛", () =>
             {
-                if (autoReviveFeature == null)
-                    DrawUnavailable("自动复活");
+                if (occultPotFeature == null)
+                    DrawUnavailable("魔法罐助手");
                 else
-                    autoReviveFeature.DrawSettings();
+                    occultPotFeature.DrawSettings();
             });
             ImGui.EndTabBar();
         }
