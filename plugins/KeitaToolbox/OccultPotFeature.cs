@@ -430,6 +430,7 @@ internal sealed class OccultPotFeature : IDisposable
         DService.Instance().AddonLifecycle.UnregisterListener(OnAreaMapRefresh);
         DService.Instance().AddonLifecycle.UnregisterListener(OnContentsFinderConfirm);
         FrameworkManager.Instance().Unreg(OnUpdate);
+        FrameworkManager.Instance().Unreg(OnPotFateTarget);
         FrameworkManager.Instance().Unreg(OnAutoDigSafety);
         FrameworkManager.Instance().Unreg(OnAutoRevive);
         FrameworkManager.Instance().Unreg(OnUndergroundTestSafety);
@@ -1037,6 +1038,7 @@ internal sealed class OccultPotFeature : IDisposable
     {
         StopUndergroundTest(false);
         FrameworkManager.Instance().Unreg(OnUpdate);
+        FrameworkManager.Instance().Unreg(OnPotFateTarget);
         FrameworkManager.Instance().Unreg(OnAutoDigSafety);
         FrameworkManager.Instance().Unreg(OnAutoRevive);
         ResetAutoReviveCandidate();
@@ -1092,7 +1094,13 @@ internal sealed class OccultPotFeature : IDisposable
         if (!InOccultMapZone && !crossingDC) return;
 
         FrameworkManager.Instance().Reg(OnUpdate, 1_000);
+        FrameworkManager.Instance().Reg(OnPotFateTarget, 100);
         FrameworkManager.Instance().Reg(OnAutoDigSafety, 100);
+    }
+
+    private void OnPotFateTarget(IFramework _)
+    {
+        MaintainPotFateTarget();
     }
 
     private void OnAutoDigSafety(IFramework _)
@@ -1401,8 +1409,6 @@ internal sealed class OccultPotFeature : IDisposable
             }
         }
 
-        MaintainPotFateTarget();
-
         foreach (var pot in pots)
         {
             if (pot.Alive && pot.LastSeenAlive != now)
@@ -1669,7 +1675,7 @@ internal sealed class OccultPotFeature : IDisposable
             return;
 
         var activePotFateID = localGameObject->FateId;
-        if (activePotFateID == 0 || GetPot(activePotFateID) == null || !IsFateActive(activePotFateID))
+        if (activePotFateID == 0 || GetPot(activePotFateID) == null)
             return;
 
         OmenBattleChara? nearest = null;
