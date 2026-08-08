@@ -279,7 +279,11 @@ internal sealed class OccultPotFeature : IDisposable
     private const long  AutoDigLureMissingGraceMS = 2_000;
     private const long  PostFateLureWaitMS = 20_000;
     private const long  TreasureProbeReadyTimeoutMS = 15_000;
-    private const float UndergroundHeight   = -20f;
+    private const float SouthHornUndergroundHeight          = -20f;
+    private const float NorthHornUndergroundHeight          = -23f;
+    private const float NorthHornUpperLeftUndergroundHeight = -70f;
+    private const float NorthHornUpperLeftBoundaryX         = -650f;
+    private const float NorthHornUpperLeftBoundaryZ         = -350f;
     private const float PotTreasureOpenRadius = 5f;
     private const int   UndergroundSettleMS = 750;
     private const int   MountTimeoutMS      = 20_000;
@@ -786,7 +790,7 @@ internal sealed class OccultPotFeature : IDisposable
                 if (DangerZoneHandling == DangerZoneHandlingMode.Underground)
                 {
                     ImGui.TextColored(KnownColor.Orange.ToVector4(),
-                        "进入危险候选后按 DR 方式拦截位置更新，南北征均在 Y=-20 持续寻宝；找到箱子后短暂回地面读条，完成即遁回地下。");
+                        "进入危险候选后按 DR 方式拦截位置更新；南征使用 Y=-20，北征使用 Y=-23，北征左上角使用 Y=-70。找到箱子后短暂回地面读条，完成即遁回地下。");
                     ImGui.TextColored(KnownColor.Red.ToVector4(),
                         "警告：无法隐藏撒娇罐，可能会引起绿玩惊诧。");
                     ImGui.TextColored(KnownColor.Gray.ToVector4(),
@@ -4309,13 +4313,25 @@ internal sealed class OccultPotFeature : IDisposable
             playerController->MoveControllerWalk.IsMovementInputLocked = false;
     }
 
+    // DR uses a deeper height only for the northwest section of the North Horn outer loop.
+    private static float GetUndergroundHeight(uint territory, Vector3 position) =>
+        territory == OccultNorthTerritory
+            ? position.X <= NorthHornUpperLeftBoundaryX &&
+              position.Z <= NorthHornUpperLeftBoundaryZ
+                ? NorthHornUpperLeftUndergroundHeight
+                : NorthHornUndergroundHeight
+            : SouthHornUndergroundHeight;
+
     private static unsafe void MoveUndergroundTo(Vector3 position)
     {
         if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer)
             return;
 
         var current = localPlayer.Position;
-        var target = new Vector3(position.X, UndergroundHeight, position.Z);
+        var target = new Vector3(
+            position.X,
+            GetUndergroundHeight(GameState.TerritoryType, position),
+            position.Z);
         var delta = target - current;
         var next = delta.LengthSquared() <= 24f * 24f
                        ? target
@@ -4419,8 +4435,9 @@ internal sealed class OccultPotFeature : IDisposable
             undergroundTestMoveOutward   = true;
             undergroundTestNextMoveAt    = Environment.TickCount64 + 1_500;
             undergroundTestMovementReady = true;
+            var undergroundHeight = GetUndergroundHeight(GameState.TerritoryType, player.Position);
             NotifyHelper.Instance().NotificationInfo(
-                $"遁地测试已进入 Y=-20；将沿面向往返 {UndergroundTestMoveDistance:F0} 米，再次执行指令退出");
+                $"遁地测试已进入 Y={undergroundHeight:F0}；将沿面向往返 {UndergroundTestMoveDistance:F0} 米，再次执行指令退出");
             return true;
         });
 
@@ -5127,7 +5144,7 @@ internal sealed class OccultPotFeature : IDisposable
                 PositionUpdateInstancePacket.MoveType.NormalMove0;
             var undergroundPosition = new Vector3(
                 treasureInteractionOriginalPosition.X,
-                UndergroundHeight,
+                GetUndergroundHeight(GameState.TerritoryType, treasureInteractionOriginalPosition),
                 treasureInteractionOriginalPosition.Z);
             allowUndergroundPositionUpdate = true;
             try
@@ -5137,7 +5154,7 @@ internal sealed class OccultPotFeature : IDisposable
                     undergroundPosition,
                     moveType).Send();
                 DService.Instance().Log.Information(
-                    "[OccultPotNotifier] Magic Pot coffer opened; returned underground to Y=-20");
+                    $"[OccultPotNotifier] Magic Pot coffer opened; returned underground to Y={undergroundPosition.Y:F0}");
             }
             finally
             {
@@ -5512,7 +5529,9 @@ internal sealed class OccultPotFeature : IDisposable
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         client.DefaultRequestHeaders.Add("Authorization", $"Bearer {TrackerAnonKey}");
-        client.DefaultRequestHeaders.Add("Prefer",        "return=representation");
+        client.DefaultRequestHeaders.Add(
+            "Prefer",
+            "return=representation, resolution=ignore-duplicates, on_conflict=last_fate");
         client.DefaultRequestHeaders.Add("User-Agent",    "DailyRoutines-OccultPotNotifier");
         return client;
     }
@@ -5564,13 +5583,16 @@ internal sealed class OccultPotFeature : IDisposable
 
         context = new SyncContext
         {
-            Fingerprint = ComputeHash(dcID, fateID, (int)bestEpoch),
-            Datacenter  = (ushort)dcID,
-            Territory   = territory,
-            NorthFateID = north.FateID,
-            SouthFateID = south.FateID,
-            North       = PotObs.From(north),
-            South       = PotObs.From(south)
+            Fingerprint   = ComputeHash(dcID, fateID, (int)bestEpoch),
+            Datacenter    = (ushort)dcID,
+            Territory     = territory,
+            Server        = GameState.ZoneServerID,
+            FateID        = fateID,
+            FateTimestamp = (int)bestEpoch,
+            NorthFateID   = north.FateID,
+            SouthFateID   = south.FateID,
+            North         = PotObs.From(north),
+            South         = PotObs.From(south)
         };
         return true;
     }
@@ -5717,15 +5739,21 @@ internal sealed class OccultPotFeature : IDisposable
 
         var potChanged         = false;
         var fingerprintChanged = !string.Equals(row.LastFateHash, context.Fingerprint, StringComparison.Ordinal);
+        var metadataChanged    = row.Server != context.Server ||
+                                 row.Fate != context.FateID ||
+                                 row.FateTimestamp != context.FateTimestamp;
         var north              = MergePot(context.NorthFateID, context.North, shared, ref potChanged);
         var south              = MergePot(context.SouthFateID, context.South, shared, ref potChanged);
-        if (!potChanged && !fingerprintChanged) return;
+        if (!potChanged && !fingerprintChanged && !metadataChanged) return;
 
         var update = new Dictionary<string, object>
         {
-            ["last_fate"]   = context.Fingerprint,
-            ["territory"]   = context.Territory,
-            ["last_update"] = now
+            ["last_fate"]      = context.Fingerprint,
+            ["territory"]      = context.Territory,
+            ["server"]         = context.Server,
+            ["fate"]           = context.FateID,
+            ["fate_timestamp"] = context.FateTimestamp,
+            ["last_update"]    = now
         };
 
         string? potHistory = null;
@@ -5741,8 +5769,11 @@ internal sealed class OccultPotFeature : IDisposable
         var response = await Client.PatchAsync($"{TrackerBaseURL}{TrackerTable}?id=eq.{row.RowID}", content);
         response.EnsureSuccessStatusCode();
 
-        row.LastFateHash = context.Fingerprint;
-        row.LastUpdate   = now;
+        row.LastFateHash  = context.Fingerprint;
+        row.Server        = context.Server;
+        row.Fate          = context.FateID;
+        row.FateTimestamp = context.FateTimestamp;
+        row.LastUpdate    = now;
         if (potHistory != null)
             row.PotHistory = potHistory;
     }
@@ -5762,6 +5793,9 @@ internal sealed class OccultPotFeature : IDisposable
             ["last_fate"]         = context.Fingerprint,
             ["tracker_type"]      = 1,
             ["datacenter"]        = context.Datacenter,
+            ["server"]            = context.Server,
+            ["fate"]              = context.FateID,
+            ["fate_timestamp"]    = context.FateTimestamp,
             ["encounter_history"] = "[]",
             ["fate_history"]      = "[]",
             ["pot_history"]       = potHistory,
@@ -5830,7 +5864,10 @@ internal sealed class OccultPotFeature : IDisposable
     {
         public string Fingerprint;
         public ushort Datacenter;
-        public uint Territory;
+        public uint   Territory;
+        public uint   Server;
+        public uint   FateID;
+        public int    FateTimestamp;
         public ushort NorthFateID;
         public ushort SouthFateID;
         public PotObs North;
@@ -5872,6 +5909,15 @@ internal sealed class OccultPotFeature : IDisposable
 
         [JsonProperty("last_fate")]
         public string LastFateHash = string.Empty;
+
+        [JsonProperty("server")]
+        public uint Server;
+
+        [JsonProperty("fate")]
+        public uint Fate;
+
+        [JsonProperty("fate_timestamp")]
+        public int FateTimestamp;
 
         [JsonProperty("pot_history")]
         public string PotHistory = string.Empty;
@@ -6256,7 +6302,7 @@ internal sealed class OccultPotFeature : IDisposable
             new(-554.0244f, 110.698654f, -365.897f)
         ];
 
-        // North Horn data verified against EurekaTrackerAutoPopper (2026-08-03, 0115c29; point sets unchanged since e8306ff).
+        // North Horn data verified against EurekaTrackerAutoPopper (2026-08-08, 840f246; point sets unchanged since e8306ff).
         private static readonly (Vector3 Pos, uint Tag, uint MapID)[] NorthHornTreasures =
         [
             (new(383.3138f, 33f, -175.6476f), 1597u, OccultNorthMapID),
@@ -6450,7 +6496,7 @@ internal sealed class OccultPotFeature : IDisposable
             new(-124f, 76.75548f, 777f)
         ];
 
-        // Survey point data verified against EurekaTrackerAutoPopper (2026-08-03, cd0dcf5).
+        // Survey point data verified against EurekaTrackerAutoPopper (2026-08-08, 840f246; point sets unchanged since cd0dcf5).
         private static readonly (Vector3 Pos, uint MapID)[] SouthHornSurveys =
         [
             (new(857f, 73.17932f, -692f), OccultMapID),
