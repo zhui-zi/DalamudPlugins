@@ -851,11 +851,11 @@ internal sealed class OccultPotFeature : IDisposable
         ConfigSection("魔法罐 FATE 自动选中目标");
         using (ImRaii.PushIndent())
         {
-            if (ImGui.Checkbox("参加魔法罐 FATE 时持续选中 FATE 敌人", ref config.KeepPotFateEnemyTargeted))
+            if (ImGui.Checkbox("位于魔法罐 FATE 区域时持续选中敌人", ref config.KeepPotFateEnemyTargeted))
                 config.Save(this);
 
             ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                "仅在玩家已加入魔法罐 FATE 时生效；当前目标不是该 FATE 的存活敌人时，自动选中最近目标。\n" +
+                "进入魔法罐 FATE 的圆形区域即生效，不要求已加入 FATE 或进入战斗；当前目标失效时自动选中最近敌人。\n" +
                 "不会控制 AEAssist，也不会在 FATE 结束后清除或修改目标。");
         }
 
@@ -1669,13 +1669,23 @@ internal sealed class OccultPotFeature : IDisposable
             DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false } localPlayer)
             return;
 
-        var targetSystem = TargetSystem.Instance();
-        var localGameObject = (GameObject*)localPlayer.Address;
-        if (targetSystem == null || localGameObject == null)
-            return;
+        ushort activePotFateID = 0;
+        var nearestFateCenterDistance = float.MaxValue;
+        foreach (var fate in DService.Instance().Fate)
+        {
+            if (GetPot(fate.FateId) == null || fate.Radius <= 0f) continue;
 
-        var activePotFateID = localGameObject->FateId;
-        if (activePotFateID == 0 || GetPot(activePotFateID) == null)
+            var offset = localPlayer.Position - fate.Position;
+            var centerDistance = offset.X * offset.X + offset.Z * offset.Z;
+            if (centerDistance > fate.Radius * fate.Radius || centerDistance >= nearestFateCenterDistance)
+                continue;
+
+            activePotFateID = fate.FateId;
+            nearestFateCenterDistance = centerDistance;
+        }
+
+        var targetSystem = TargetSystem.Instance();
+        if (activePotFateID == 0 || targetSystem == null)
             return;
 
         OmenBattleChara? nearest = null;
