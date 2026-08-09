@@ -2345,9 +2345,6 @@ internal sealed class OccultPotFeature : IDisposable
 
         var territory = autoDigTarget?.TerritoryID ?? GameState.TerritoryType;
         var regionKey = continuation ? "R" : autoDigTarget?.DirName == "南" ? "S" : "N";
-        var keepMountedForDirection = continuation &&
-                                      territory == OccultNorthTerritory &&
-                                      DangerZoneHandling == DangerZoneHandlingMode.Underground;
         digDirection = string.Empty;
         awaitingDirection = false;
         autoDigCofferPositions = [];
@@ -2362,9 +2359,7 @@ internal sealed class OccultPotFeature : IDisposable
                     return;
                 }
 
-                autoDigStatus = "北征续罐：遁地取方位";
-                var currentPosition = DService.Instance().ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
-                EnqueueUndergroundMoveTo(currentPosition, 3f, 10000);
+                autoDigStatus = "北征续罐：地表取方位";
             }
             else
             {
@@ -2376,13 +2371,8 @@ internal sealed class OccultPotFeature : IDisposable
             }
         }
 
-        if (keepMountedForDirection)
-            autoDigTask.Enqueue(WaitMounted());
-        else
-        {
-            autoDigTask.Enqueue(() => { Dismount(); return true; });
-            autoDigTask.DelayNext(700);
-        }
+        autoDigTask.Enqueue(() => { Dismount(); return true; });
+        autoDigTask.DelayNext(700);
         autoDigTask.Enqueue(() => { autoDigStatus = "取方位"; UseLureForDirection(); return true; });
         autoDigTask.DelayNext(3000);
         autoDigTask.Enqueue(WaitDirection(6000));
@@ -2390,7 +2380,7 @@ internal sealed class OccultPotFeature : IDisposable
         {
             if (string.IsNullOrEmpty(digDirection))
             {
-                if (!keepMountedForDirection) Dismount();
+                Dismount();
                 UseLureForDirection();
             }
             return true;
@@ -2623,21 +2613,21 @@ internal sealed class OccultPotFeature : IDisposable
         }
 
         autoDigTriedPositions.Add(positions[index]);
-        var keepMountedUntilTreasure = undergroundDangerActive ||
-                                       dangerPosition && DangerZoneHandling == DangerZoneHandlingMode.Underground;
-        if (keepMountedUntilTreasure)
+        var useUndergroundRoute = undergroundDangerActive ||
+                                  dangerPosition && DangerZoneHandling == DangerZoneHandlingMode.Underground;
+        if (useUndergroundRoute)
+        {
             EnqueueUndergroundMoveTo(positions[index], 3f);
+            EnqueueReturnToSurface(positions[index]);
+        }
         else
             EnqueueMoveTo(
                 positions[index],
                 3f,
                 mount: true,
                 timeoutMs: territory == OccultNorthTerritory ? 240000 : 90000);
-        if (!keepMountedUntilTreasure)
-        {
-            autoDigTask.Enqueue(WaitDismounted(5000));
-            autoDigTask.DelayNext(700);
-        }
+        autoDigTask.Enqueue(WaitDismounted(5000));
+        autoDigTask.DelayNext(700);
         autoDigTask.Enqueue(() =>
         {
             treasureRevealed = false;
@@ -2648,13 +2638,7 @@ internal sealed class OccultPotFeature : IDisposable
             awaitingDirection = false;
             return true;
         });
-        autoDigTask.Enqueue(WaitTreasureAtPoint(positions[index], 5000, keepMountedUntilTreasure));
-        if (keepMountedUntilTreasure)
-        {
-
-            autoDigTask.Enqueue(WaitDismountedWhen(() => treasureRevealed, 5000));
-            autoDigTask.Enqueue(WaitDelayWhen(() => treasureRevealed, 700));
-        }
+        autoDigTask.Enqueue(WaitTreasureAtPoint(positions[index], 5000));
         autoDigTask.Enqueue(WaitTreasureOpened(30000));
         autoDigTask.Enqueue(() =>
         {
@@ -3455,15 +3439,14 @@ internal sealed class OccultPotFeature : IDisposable
 
     private unsafe void UseLureForDirection()
     {
+        if (undergroundDangerActive)
+        {
+            FailAutoDigMovement("仍处于遁地状态，已停止使用圣灵药以避免下坐骑");
+            return;
+        }
+
         digDirection      = string.Empty;
         awaitingDirection = true;
-
-        if (undergroundDangerActive && DService.Instance().ObjectTable.LocalPlayer is { } localPlayer)
-        {
-            const PositionUpdateInstancePacket.MoveType moveType =
-                PositionUpdateInstancePacket.MoveType.NormalMove0;
-            new PositionUpdateInstancePacket(localPlayer.Rotation, localPlayer.Position, moveType).Send();
-        }
 
         UseLureItem();
     }
@@ -3896,6 +3879,43 @@ internal sealed class OccultPotFeature : IDisposable
             return true;
         });
         autoDigTask.Enqueue(WaitUndergroundArrive(position, tolerance, timeoutMs));
+    }
+
+    private unsafe void EnqueueReturnToSurface(Vector3 position)
+    {
+        if (autoDigTask == null) return;
+
+        autoDigTask.Enqueue(() =>
+        {
+            if (!undergroundDangerActive) return true;
+            if (!DService.Instance().Condition[ConditionFlag.Mounted] ||
+                DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false } localPlayer)
+                return FailAutoDigMovement("未能保持坐骑状态，已停止遁地寻宝");
+
+            VnavStop();
+            allowUndergroundPositionUpdate = true;
+            try
+            {
+                ((GameObject*)localPlayer.Address)->SetPosition(position.X, position.Y, position.Z);
+                new PositionUpdateInstancePacket(
+                    localPlayer.Rotation,
+                    position,
+                    PositionUpdateInstancePacket.MoveType.NormalMove0).Send();
+            }
+            catch
+            {
+                return FailAutoDigMovement("恢复地表位置失败，已停止遁地寻宝");
+            }
+            finally
+            {
+                allowUndergroundPositionUpdate = false;
+            }
+
+            EndUndergroundDangerMode();
+            DService.Instance().Log.Information(
+                $"[OccultPotNotifier] Returned to surface before lure use: {position.X:F2}, {position.Y:F2}, {position.Z:F2}");
+            return true;
+        });
     }
 
     private unsafe Func<bool?> WaitUndergroundArrive(Vector3 position, float tolerance, int timeoutMs)
@@ -4445,12 +4465,6 @@ internal sealed class OccultPotFeature : IDisposable
         };
     }
 
-    private Func<bool?> WaitDismountedWhen(Func<bool> enabled, int timeoutMs)
-    {
-        var wait = WaitDismounted(timeoutMs);
-        return () => !enabled() ? true : wait();
-    }
-
     private bool FailAutoDigMovement(string message)
     {
         DService.Instance().Log.Warning($"[OccultPotNotifier] {message}");
@@ -4463,7 +4477,7 @@ internal sealed class OccultPotFeature : IDisposable
 
 
 
-    private Func<bool?> WaitTreasureAtPoint(Vector3 target, int timeoutMs, bool keepMountedUntilTreasure)
+    private Func<bool?> WaitTreasureAtPoint(Vector3 target, int timeoutMs)
     {
         long readyDeadline  = 0;
         long resultDeadline = 0;
@@ -4484,10 +4498,6 @@ internal sealed class OccultPotFeature : IDisposable
                 return true;
             }
 
-            if (keepMountedUntilTreasure &&
-                !DService.Instance().Condition[ConditionFlag.Mounted])
-                return FailAutoDigMovement("遁地挖罐期间失去坐骑状态，已停止自动挖罐");
-
             if (lureUsed)
             {
                 if (!string.IsNullOrEmpty(digDirection)) return true;
@@ -4501,7 +4511,7 @@ internal sealed class OccultPotFeature : IDisposable
                 return FailAutoDigMovement("未能稳定到达候选点，已停止自动挖罐");
 
             var condition = DService.Instance().Condition;
-            if (!keepMountedUntilTreasure && condition[ConditionFlag.Mounted])
+            if (condition[ConditionFlag.Mounted])
             {
                 Dismount();
                 return false;
@@ -4674,8 +4684,15 @@ internal sealed class OccultPotFeature : IDisposable
         return true;
     }
 
-    private static void Dismount()
+    private void Dismount()
     {
+        if (undergroundDangerActive)
+        {
+            DService.Instance().Log.Warning(
+                "[OccultPotNotifier] Blocked dismount while underground danger route is active");
+            return;
+        }
+
         if (DService.Instance().Condition[ConditionFlag.Mounted])
             ExecuteCommandManager.Instance().ExecuteCommand(ExecuteCommandFlag.Dismount);
     }
