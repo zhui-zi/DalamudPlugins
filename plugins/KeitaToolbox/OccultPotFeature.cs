@@ -274,6 +274,7 @@ internal sealed class OccultPotFeature : IDisposable
     private const float NorthHornUpperLeftBoundaryX         = -650f;
     private const float NorthHornUpperLeftBoundaryZ         = -350f;
     private const float PotTreasureOpenRadius = 5f;
+    private const float UndergroundMoveSpeed = 24f;
     private const int   UndergroundSettleMS = 750;
     private const int   MountTimeoutMS      = 20_000;
     private const float UndergroundTestMoveDistance  = 12f;
@@ -281,6 +282,8 @@ internal sealed class OccultPotFeature : IDisposable
     private const int   UndergroundTestEndpointPauseMS = 1_000;
     private const int   UndergroundTestStopTimeoutMS = 10_000;
     private const string UndergroundTestCommand = "occultundergroundtest";
+    private static readonly string[] DrInnerLoopRouteAliases = ["内环", "Inner Loop", "内回り", "내부"];
+    private static readonly string[] DrOuterLoopRouteAliases = ["外环", "Outer Loop", "外回り", "외부"];
     private const uint LureStatusID = 1531;
 
     private const uint IconGoldChest = 60354;
@@ -830,6 +833,8 @@ internal sealed class OccultPotFeature : IDisposable
                 {
                     using (ImRaii.PushIndent())
                     {
+                        if (ImGui.Checkbox("DR 寻宝使用外环路线", ref config.CofferHuntOuterLoop))
+                            config.Save(this);
                         ImGui.TextColored(KnownColor.Gray.ToVector4(),
                             "BOCCHI 返回并使用魔寻宝后，仅在青铜 > 15、白银 > 2、下个罐子 > 10 分钟时开启。\n" +
                             "需启用 BOCCHI 自动魔寻宝，以及 DR「新月岛综合助手」模块；传送到非起始点魔路水晶后，仅在周围 50 yalms 无其他玩家时启动，发现玩家则换水晶重试。\n" +
@@ -2988,8 +2993,7 @@ internal sealed class OccultPotFeature : IDisposable
             }
 
             autoDigStatus = $"DR 寻宝启动：{aetheryte.Name}";
-            var routeName = LuminaWrapper.GetAddonText(cofferHuntTerritory == OccultTerritory ? 16586u : 16587u);
-            SendCommand($"/pdr ptreasure {routeName}");
+            SendDrCofferHuntStartCommand();
             commandIssued = true;
             return true;
         });
@@ -3001,6 +3005,18 @@ internal sealed class OccultPotFeature : IDisposable
             return true;
         });
         autoDigTask.DelayNext(500);
+    }
+
+    private void SendDrCofferHuntStartCommand()
+    {
+        var routeAliases = config.CofferHuntOuterLoop
+                               ? DrOuterLoopRouteAliases
+                               : DrInnerLoopRouteAliases;
+        foreach (var routeAlias in routeAliases)
+            SendCommand($"/pdr ptreasure {routeAlias}");
+
+        DService.Instance().Log.Information(
+            $"[OccultPotNotifier] DailyRoutines treasure route dispatched: {(config.CofferHuntOuterLoop ? "outer" : "inner")}");
     }
 
     private Func<bool?> WaitArriveUnlessDrStarted(
@@ -4019,15 +4035,22 @@ internal sealed class OccultPotFeature : IDisposable
         if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer)
             return;
 
+        var playerController = PlayerController.Instance();
+        if (playerController != null && playerController->MoveState == 3)
+            playerController->MoveState = 1;
+
         var current = localPlayer.Position;
         var target = new Vector3(
             position.X,
             GetUndergroundHeight(GameState.TerritoryType, position),
             position.Z);
-        var delta = target - current;
-        var next = delta.LengthSquared() <= 24f * 24f
+        var horizontalDelta = new Vector3(target.X, current.Y, target.Z) - current;
+        var distance = horizontalDelta.Length();
+        var step = UndergroundMoveSpeed * GameState.DeltaTime;
+        var next = distance < 0.1f || step >= distance
                        ? target
-                       : current + Vector3.Normalize(delta) * 24f;
+                       : current + (horizontalDelta / distance * step);
+        next.Y = target.Y;
 
         ((GameObject*)localPlayer.Address)->SetPosition(next.X, next.Y, next.Z);
         new PositionUpdateInstancePacket(
@@ -5756,6 +5779,7 @@ internal sealed class OccultPotFeature : IDisposable
 
         [JsonProperty("EnableBocchiHunt")]
         public bool      EnableCofferHunt;
+        public bool      CofferHuntOuterLoop = true;
 
         public bool      EnableAutoRevive;
         public bool      AutoRevivePartyOnly = true;

@@ -15,6 +15,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
+using OmenTools.OmenService;
 
 namespace KeitaToolbox;
 
@@ -76,7 +77,10 @@ internal sealed unsafe class BasicFeatures : IDisposable
         {
             var value = text[(markerIndex + RecruitmentMarker.Length)..].Trim();
             if (!string.IsNullOrWhiteSpace(value))
+            {
                 pendingRecruitment = value;
+                Plugin.Log.Information("Captured a party finder recruitment message for duty completion.");
+            }
             return;
         }
 
@@ -95,19 +99,14 @@ internal sealed unsafe class BasicFeatures : IDisposable
             return;
         }
 
-        if (Plugin.PartyList.Length < 2)
-        {
-            pendingRecruitment = string.Empty;
-            return;
-        }
-
         foreach (var line in pendingRecruitment.Split(
                      '\n',
                      StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            Plugin.CommandManager.ProcessCommand($"/e {line}");
+            ChatManager.Instance().SendMessage($"/e {line}");
         }
 
+        Plugin.Log.Information("Sent the captured party finder recruitment message after duty completion.");
         pendingRecruitment = string.Empty;
     }
 
