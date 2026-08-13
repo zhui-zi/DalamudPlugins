@@ -151,6 +151,7 @@ internal sealed class OccultPotFeature : IDisposable
     private int        pendingFixativeBeforeCount;
     private long       pendingCurrencyActionAt;
     private long       pendingCurrencyDeadline;
+    private bool       pendingCurrencyConfirmationClicked;
     private long       nextCurrencyExchangeAt;
     private string     currencyExchangeStatus = string.Empty;
 
@@ -182,7 +183,7 @@ internal sealed class OccultPotFeature : IDisposable
     private const long CurrencyExchangeSessionTimeoutMS = 5_000;
     private const long CurrencyExchangeConfirmTimeoutMS = 5_000;
     private const long CurrencyExchangeRetryCooldownMS = 30_000;
-    private const long CurrencyExchangeSpacingMS = 1_000;
+    private const long CurrencyExchangeSpacingMS = 250;
 
     private static readonly CurrencyExchangeSpec SilverCurrencyExchange =
         new("十二城邦白银币", SilverCoinItemID, 0x1B0614, 1200);
@@ -445,6 +446,8 @@ internal sealed class OccultPotFeature : IDisposable
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PreDraw,    "ContentsFinderConfirm", OnContentsFinderConfirm);
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PostSetup,  "ShopExchangeCurrency", OnCurrencyExchangeAddon);
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PreDraw,    "ShopExchangeCurrency", OnCurrencyExchangeAddon);
+        DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PostSetup,  "SelectYesno", OnCurrencyExchangeConfirmAddon);
+        DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PreDraw,    "SelectYesno", OnCurrencyExchangeConfirmAddon);
         Plugin.PluginInterface.UiBuilder.Draw += OnPostDraw;
         Plugin.PluginInterface.UiBuilder.Draw += DrawOverlayWindow;
 
@@ -462,6 +465,7 @@ internal sealed class OccultPotFeature : IDisposable
         DService.Instance().AddonLifecycle.UnregisterListener(OnAreaMapRefresh);
         DService.Instance().AddonLifecycle.UnregisterListener(OnContentsFinderConfirm);
         DService.Instance().AddonLifecycle.UnregisterListener(OnCurrencyExchangeAddon);
+        DService.Instance().AddonLifecycle.UnregisterListener(OnCurrencyExchangeConfirmAddon);
         FrameworkManager.Instance().Unreg(OnUpdate);
         FrameworkManager.Instance().Unreg(OnPotFateTarget);
         FrameworkManager.Instance().Unreg(OnAutoDigSafety);
@@ -1475,6 +1479,12 @@ internal sealed class OccultPotFeature : IDisposable
             return false;
         }
 
+        if (AddonSelectYesnoEvent.CheckConfirm())
+        {
+            reason = "存在待处理确认窗口，暂缓兑换。";
+            return false;
+        }
+
         if (condition[ConditionFlag.InCombat])
         {
             reason = "战斗中暂停兑换。";
@@ -1538,6 +1548,25 @@ internal sealed class OccultPotFeature : IDisposable
             return;
 
         args.Addon.ToStruct()->IsVisible = false;
+    }
+
+    private void OnCurrencyExchangeConfirmAddon(AddonEvent _, AddonArgs args)
+    {
+        if (pendingCurrencyExchange is not { } pending ||
+            pendingCurrencyActionAt != 0 ||
+            pendingCurrencyConfirmationClicked ||
+            args.Addon.IsNull)
+        {
+            return;
+        }
+
+        if (!AddonSelectYesnoEvent.ClickYes([pending.Spec.Name, "终极固定剂"]))
+            return;
+
+        pendingCurrencyConfirmationClicked = true;
+        currencyExchangeStatus = $"已自动确认{pending.Spec.Name}兑换，等待库存更新…";
+        Plugin.Log.Information(
+            $"[OccultPotNotifier] Auto-confirmed remote currency exchange event={pending.Spec.EventID:X}, item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
     }
 
     private static unsafe void SuppressCurrencyExchangeWindow()
@@ -1638,6 +1667,7 @@ internal sealed class OccultPotFeature : IDisposable
                 pendingFixativeBeforeCount = 0;
                 pendingCurrencyActionAt = 0;
                 pendingCurrencyDeadline = 0;
+                pendingCurrencyConfirmationClicked = false;
                 nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
 
                 var message = $"{pending.Spec.Name}已兑换为终极固定剂 ×{pending.Quantity}";
@@ -1692,8 +1722,9 @@ internal sealed class OccultPotFeature : IDisposable
                 pendingCurrencyExchange = request with { Quantity = quantity };
                 pendingCurrencyBeforeCount = currentCount;
                 pendingFixativeBeforeCount = fixativeBeforeCount;
-                pendingCurrencyActionAt = now + CurrencyExchangeSpacingMS;
+                pendingCurrencyActionAt = now;
                 pendingCurrencyDeadline = now + CurrencyExchangeSessionTimeoutMS;
+                pendingCurrencyConfirmationClicked = false;
                 currencyExchangeStatus = $"正在建立{request.Spec.Name}兑换会话…";
                 Plugin.Log.Information(
                     $"[OccultPotNotifier] Started remote currency exchange npc={CurrencyExchangeNpcDataID}, player={LocalPlayerState.EntityID:X}, event={request.Spec.EventID:X}, item={request.Spec.CurrencyItemID}, quantity={quantity}");
@@ -1719,6 +1750,7 @@ internal sealed class OccultPotFeature : IDisposable
         pendingFixativeBeforeCount = 0;
         pendingCurrencyActionAt = 0;
         pendingCurrencyDeadline = 0;
+        pendingCurrencyConfirmationClicked = false;
         nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
         currencyExchangeStatus = message;
         CloseCurrencyExchangeWindow();
@@ -1754,6 +1786,7 @@ internal sealed class OccultPotFeature : IDisposable
         pendingFixativeBeforeCount = 0;
         pendingCurrencyActionAt = 0;
         pendingCurrencyDeadline = 0;
+        pendingCurrencyConfirmationClicked = false;
         nextCurrencyExchangeAt = 0;
         currencyExchangeStatus = string.Empty;
     }
