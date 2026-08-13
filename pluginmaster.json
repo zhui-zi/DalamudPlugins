@@ -3,7 +3,7 @@
     "Author": "zhui-zi",
     "Name": "Keita 工具箱",
     "InternalName": "KeitaToolbox",
-    "AssemblyVersion": "1.5.12.0",
+    "AssemblyVersion": "1.5.13.0",
     "Description": "提供 AEAssist 启动管理、任务与招募自动化、完整的新月岛魔法罐助手、插件及地图套装切换、交易保护、输入法清理、肖像同步以及高级移动和战斗辅助功能。",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
@@ -25,7 +25,7 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1786617484,
+    "LastUpdate": 1786618297,
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip"
