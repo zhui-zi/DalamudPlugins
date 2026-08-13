@@ -799,9 +799,6 @@ internal sealed class OccultPotFeature : IDisposable
 
             if (config.EnableAutoDig)
             {
-                ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                    "南征与北征均支持首次挖宝、DR 间隙寻宝和自动跨区；北征续罐仅在 DR 遁地模式下自动执行。");
-
                 ConfigSection("路线与危险区域");
                 var dangerHandling = DangerZoneHandling;
                 var dangerHandlingName = dangerHandling switch
@@ -903,10 +900,6 @@ internal sealed class OccultPotFeature : IDisposable
         {
             if (ImGui.Checkbox("位于魔法罐 FATE 区域时持续选中敌人", ref config.KeepPotFateEnemyTargeted))
                 config.Save(this);
-
-            ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                "进入魔法罐 FATE 的圆形区域即生效，不要求已加入 FATE 或进入战斗；当前目标失效时自动选中最近敌人。\n" +
-                "不会控制 AEAssist，也不会在 FATE 结束后清除或修改目标。");
         }
 
         ConfigSection("BMR AI");
@@ -934,10 +927,6 @@ internal sealed class OccultPotFeature : IDisposable
         {
             if (ImGui.Checkbox("白银币或白金币达到 9999 时自动兑换", ref config.EnableAutoCurrencyExchange))
                 config.Save(this);
-
-            ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                "仅在北方海角安全状态下生效；直接向调查队的古钱鉴定师发送兑换包，不会移动、选中 NPC 或打开商店。\n" +
-                "白银币 1200 枚 / 白金币 1920 枚兑换 1 个终极固定剂。");
 
             var silverCount = GetCurrencyCount(SilverCoinItemID);
             var goldCount   = GetCurrencyCount(GoldCoinItemID);
@@ -994,9 +983,6 @@ internal sealed class OccultPotFeature : IDisposable
                     config.Save(this);
                 }
             }
-
-            ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                "仅在新月岛南方海角 / 北方海角内，且药剂师「复活」或辅助白魔法师「魔复活」可用时生效；范围 30 yalms。");
         }
     }
 
@@ -1052,12 +1038,6 @@ internal sealed class OccultPotFeature : IDisposable
         {
             if (ImGui.Checkbox("携带「撒娇罐」时自动切换标记", ref config.AutoSwitchOnLure))
                 config.Save(this);
-            if (config.AutoSwitchOnLure)
-            {
-                using (ImRaii.PushIndent())
-                    ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                        "自动按最近所在的罐子方位显示北罐 / 南罐；\n出现「再帮你找一次财宝」提示后自动切换到续罐点位；\n携带期间手动点击图层可暂时接管，魔法罐消失后恢复自动切换。");
-            }
         }
 
         ConfigSection("宝箱位置提示");
