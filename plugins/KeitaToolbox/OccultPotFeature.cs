@@ -143,6 +143,9 @@ internal sealed class OccultPotFeature : IDisposable
     private ulong      autoReviveConfirmTargetID;
     private string     autoReviveConfirmTargetName = string.Empty;
     private long       autoReviveConfirmUntil;
+    private bool       bmrAiSuppressionActive;
+    private bool       bmrAiWasEnabled;
+    private long       bmrAiSuppressionReleaseAt;
 
     private readonly Queue<CurrencyExchangeRequest> currencyExchangeQueue = [];
     private readonly Dictionary<uint, long> currencyExchangeRetryAfter = [];
@@ -163,6 +166,7 @@ internal sealed class OccultPotFeature : IDisposable
     private const long CofferHuntRequiredLeadSeconds = 600;
     private const long CofferHuntStopLeadSeconds     = 300;
     private const long PostBattleCheckTimeoutMS      = 180_000;
+    private const long BmrAiSuppressionReleaseGraceMS = 500;
     private const uint TreasuresightActionID         = 0xA2B3;
     private const uint TreasuresightGeneralActionID  = 32;
 
@@ -457,6 +461,7 @@ internal sealed class OccultPotFeature : IDisposable
 
     public void Dispose()
     {
+        RestoreBmrAiAfterPotFate();
         DService.Instance().ClientState.TerritoryChanged -= OnZoneChanged;
         DService.Instance().Chat.ChatMessage             -= OnChatMessage;
         GamePacketManager.Instance().Unreg(OnPreSendPacket);
@@ -904,6 +909,21 @@ internal sealed class OccultPotFeature : IDisposable
                 "不会控制 AEAssist，也不会在 FATE 结束后清除或修改目标。");
         }
 
+        ConfigSection("BMR AI");
+        using (ImRaii.PushIndent())
+        {
+            if (ImGui.Checkbox("魔法罐 FATE 期间保持 BMR AI 关闭", ref config.KeepBmrAiDisabledDuringPotFate))
+            {
+                config.Save(this);
+                if (!config.KeepBmrAiDisabledDuringPotFate)
+                    RestoreBmrAiAfterPotFate();
+            }
+
+            ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                "进入魔法罐 FATE 的圆形区域后持续关闭 Bossmod Reborn AI。\n" +
+                "离开或 FATE 结束时，仅恢复由本功能关闭且进入前原本开启的 AI。");
+        }
+
         ConfigUIAutoRevive();
     }
 
@@ -1120,6 +1140,7 @@ internal sealed class OccultPotFeature : IDisposable
 
     private void OnZoneChanged(uint zone)
     {
+        RestoreBmrAiAfterPotFate();
         StopUndergroundTest(false);
         FrameworkManager.Instance().Unreg(OnUpdate);
         FrameworkManager.Instance().Unreg(OnPotFateTarget);
@@ -1186,6 +1207,7 @@ internal sealed class OccultPotFeature : IDisposable
     private void OnPotFateTarget(IFramework _)
     {
         MaintainPotFateTarget();
+        MaintainBmrAiSuppression();
     }
 
     private void OnAutoDigSafety(IFramework _)
@@ -2141,6 +2163,82 @@ internal sealed class OccultPotFeature : IDisposable
 
         if (nearest != null)
             targetSystem->Target = (GameObject*)nearest.Address;
+    }
+
+    private void MaintainBmrAiSuppression()
+    {
+        if (!config.KeepBmrAiDisabledDuringPotFate)
+        {
+            RestoreBmrAiAfterPotFate();
+            return;
+        }
+
+        var localPlayer = DService.Instance().ObjectTable.LocalPlayer;
+        if (localPlayer == null) return;
+
+        var insidePotFate = false;
+        foreach (var fate in DService.Instance().Fate)
+        {
+            if (GetPot(fate.FateId) == null || fate.Radius <= 0f) continue;
+
+            var offset = localPlayer.Position - fate.Position;
+            if (offset.X * offset.X + offset.Z * offset.Z <= fate.Radius * fate.Radius)
+            {
+                insidePotFate = true;
+                break;
+            }
+        }
+
+        if (!insidePotFate)
+        {
+            if (!bmrAiSuppressionActive) return;
+
+            var now = Environment.TickCount64;
+            if (bmrAiSuppressionReleaseAt == 0)
+            {
+                bmrAiSuppressionReleaseAt = now + BmrAiSuppressionReleaseGraceMS;
+                return;
+            }
+
+            if (now >= bmrAiSuppressionReleaseAt)
+                RestoreBmrAiAfterPotFate();
+            return;
+        }
+
+        bmrAiSuppressionReleaseAt = 0;
+        if (!BmrAi.TryGetEnabled(out var enabled)) return;
+
+        if (!bmrAiSuppressionActive)
+        {
+            bmrAiSuppressionActive = true;
+            bmrAiWasEnabled = enabled;
+        }
+
+        if (!enabled) return;
+
+        SendCommand("/bmrai off");
+        DService.Instance().Log.Information(
+            "[OccultPotNotifier] Bossmod Reborn AI disabled for Magic Pot FATE");
+    }
+
+    private void RestoreBmrAiAfterPotFate()
+    {
+        if (!bmrAiSuppressionActive)
+        {
+            bmrAiSuppressionReleaseAt = 0;
+            return;
+        }
+
+        var shouldRestore = bmrAiWasEnabled;
+        bmrAiSuppressionActive = false;
+        bmrAiWasEnabled = false;
+        bmrAiSuppressionReleaseAt = 0;
+
+        if (!shouldRestore || !BmrAi.TryGetEnabled(out var enabled) || enabled) return;
+
+        SendCommand("/bmrai on");
+        DService.Instance().Log.Information(
+            "[OccultPotNotifier] Bossmod Reborn AI restored after Magic Pot FATE");
     }
 
     private static unsafe bool IsValidPotFateEnemy(OmenBattleChara enemy, ushort activePotFateID)
@@ -6214,6 +6312,7 @@ internal sealed class OccultPotFeature : IDisposable
         public Vector4   CircleColor      = new(1f, 0.85f, 0.2f, 1f);
 
         public bool      KeepPotFateEnemyTargeted = true;
+        public bool      KeepBmrAiDisabledDuringPotFate;
         public bool      EnableAutoDig;
         public bool      AutoDigSkipDanger    = true;
         public bool      AutoDigUndergroundDanger;
@@ -6841,6 +6940,37 @@ internal sealed class OccultPotFeature : IDisposable
 
     }
 
+
+    // Read the installed Bossmod Reborn runtime state; use its public command to change it.
+    private static class BmrAi
+    {
+        public static bool TryGetEnabled(out bool enabled)
+        {
+            enabled = false;
+
+            try
+            {
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    if (assembly.GetName().Name != "BossModReborn") continue;
+
+                    var managerType = assembly.GetType("BossMod.AI.AIManager");
+                    const BindingFlags staticFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+                    var manager = managerType?.GetField("Instance", staticFlags)?.GetValue(null);
+                    if (manager == null) return false;
+
+                    const BindingFlags instanceFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+                    enabled = manager.GetType().GetField("Beh", instanceFlags)?.GetValue(manager) != null;
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+    }
 
     // Read BOCCHI state only; BOCCHI remains the sole owner of combat logic.
     private static class BocchiAutomator
