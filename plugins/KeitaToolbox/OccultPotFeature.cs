@@ -147,6 +147,7 @@ internal sealed class OccultPotFeature : IDisposable
     private CurrencyExchangeRequest? pendingCurrencyExchange;
     private int        pendingCurrencyBeforeCount;
     private int        pendingFixativeBeforeCount;
+    private long       pendingCurrencyActionAt;
     private long       pendingCurrencyDeadline;
     private long       nextCurrencyExchangeAt;
     private string     currencyExchangeStatus = string.Empty;
@@ -1538,6 +1539,35 @@ internal sealed class OccultPotFeature : IDisposable
         var now = Environment.TickCount64;
         if (pendingCurrencyExchange is { } pending)
         {
+            if (pendingCurrencyActionAt > 0)
+            {
+                if (now < pendingCurrencyActionAt)
+                    return;
+
+                try
+                {
+                    new EventActionPacket(
+                        pending.Spec.EventID,
+                        CurrencyExchangeCategory,
+                        CurrencyExchangeAction,
+                        UltimateFixativeItemID,
+                        (uint)pending.Quantity).Send();
+
+                    pendingCurrencyActionAt = 0;
+                    pendingCurrencyDeadline = now + CurrencyExchangeConfirmTimeoutMS;
+                    currencyExchangeStatus = $"已发送{pending.Spec.Name}兑换 ×{pending.Quantity}，等待库存确认…";
+                    Plugin.Log.Information(
+                        $"[OccultPotNotifier] Sent remote currency exchange action event={pending.Spec.EventID:X}, item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
+                }
+                catch (Exception ex)
+                {
+                    CompleteCurrencyExchangeSession(pending.Spec.EventID);
+                    FailCurrencyExchange(pending, now, $"发送{pending.Spec.Name}兑换动作包失败。", ex);
+                }
+
+                return;
+            }
+
             var currentCount = GetCurrencyCount(pending.Spec.CurrencyItemID);
             var currentFixativeCount = GetCurrencyCount(UltimateFixativeItemID);
             var expectedCurrencyCount = pendingCurrencyBeforeCount - pending.Quantity * pending.Spec.Cost;
@@ -1545,10 +1575,12 @@ internal sealed class OccultPotFeature : IDisposable
             var fixativeConfirmed = currentFixativeCount >= pendingFixativeBeforeCount + pending.Quantity;
             if (currencyConfirmed || fixativeConfirmed)
             {
+                CompleteCurrencyExchangeSession(pending.Spec.EventID);
                 currencyExchangeRetryAfter.Remove(pending.Spec.CurrencyItemID);
                 pendingCurrencyExchange = null;
                 pendingCurrencyBeforeCount = 0;
                 pendingFixativeBeforeCount = 0;
+                pendingCurrencyActionAt = 0;
                 pendingCurrencyDeadline = 0;
                 nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
 
@@ -1565,19 +1597,11 @@ internal sealed class OccultPotFeature : IDisposable
             if (now < pendingCurrencyDeadline)
                 return;
 
-            currencyExchangeRetryAfter[pending.Spec.CurrencyItemID] = now + CurrencyExchangeRetryCooldownMS;
-            pendingCurrencyExchange = null;
-            pendingCurrencyBeforeCount = 0;
-            pendingFixativeBeforeCount = 0;
-            pendingCurrencyDeadline = 0;
-            nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
-
-            currencyExchangeStatus = pending.Automatic
-                                         ? $"未确认{pending.Spec.Name}库存下降，30 秒后再自动尝试。"
-                                         : $"未确认{pending.Spec.Name}库存下降，请检查背包容量后重试。";
-            NotifyHelper.Instance().NotificationWarning(currencyExchangeStatus);
-            Plugin.Log.Warning(
-                $"[OccultPotNotifier] Remote currency exchange timed out item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
+            CompleteCurrencyExchangeSession(pending.Spec.EventID);
+            var timeoutMessage = pending.Automatic
+                                     ? $"未确认{pending.Spec.Name}库存下降，30 秒后再自动尝试。"
+                                     : $"未确认{pending.Spec.Name}库存下降，请检查背包容量后重试。";
+            FailCurrencyExchange(pending, now, timeoutMessage);
             return;
         }
 
@@ -1607,32 +1631,60 @@ internal sealed class OccultPotFeature : IDisposable
             try
             {
                 var fixativeBeforeCount = GetCurrencyCount(UltimateFixativeItemID);
-                new EventActionPacket(
-                    request.Spec.EventID,
-                    CurrencyExchangeCategory,
-                    CurrencyExchangeAction,
-                    UltimateFixativeItemID,
-                    (uint)quantity).Send();
+                new EventStartPackt(LocalPlayerState.EntityID, request.Spec.EventID).Send();
 
                 pendingCurrencyExchange = request with { Quantity = quantity };
                 pendingCurrencyBeforeCount = currentCount;
                 pendingFixativeBeforeCount = fixativeBeforeCount;
-                pendingCurrencyDeadline = now + CurrencyExchangeConfirmTimeoutMS;
-                currencyExchangeStatus = $"已发送{request.Spec.Name}兑换 ×{quantity}，等待库存确认…";
+                pendingCurrencyActionAt = now + CurrencyExchangeSpacingMS;
+                pendingCurrencyDeadline = 0;
+                currencyExchangeStatus = $"正在建立{request.Spec.Name}兑换会话…";
                 Plugin.Log.Information(
-                    $"[OccultPotNotifier] Sent remote currency exchange npc={CurrencyExchangeNpcDataID}, event={request.Spec.EventID:X}, item={request.Spec.CurrencyItemID}, quantity={quantity}");
+                    $"[OccultPotNotifier] Started remote currency exchange npc={CurrencyExchangeNpcDataID}, player={LocalPlayerState.EntityID:X}, event={request.Spec.EventID:X}, item={request.Spec.CurrencyItemID}, quantity={quantity}");
             }
             catch (Exception ex)
             {
-                currencyExchangeRetryAfter[request.Spec.CurrencyItemID] = now + CurrencyExchangeRetryCooldownMS;
-                nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
-                currencyExchangeStatus = $"发送{request.Spec.Name}兑换包失败。";
-                NotifyHelper.Instance().NotificationWarning(currencyExchangeStatus);
-                Plugin.Log.Error(ex,
-                    $"[OccultPotNotifier] Failed to send remote currency exchange item={request.Spec.CurrencyItemID}, quantity={quantity}");
+                FailCurrencyExchange(request with { Quantity = quantity }, now, $"建立{request.Spec.Name}兑换会话失败。", ex);
             }
 
             return;
+        }
+    }
+
+    private void FailCurrencyExchange(
+        CurrencyExchangeRequest request,
+        long now,
+        string message,
+        Exception? exception = null)
+    {
+        currencyExchangeRetryAfter[request.Spec.CurrencyItemID] = now + CurrencyExchangeRetryCooldownMS;
+        pendingCurrencyExchange = null;
+        pendingCurrencyBeforeCount = 0;
+        pendingFixativeBeforeCount = 0;
+        pendingCurrencyActionAt = 0;
+        pendingCurrencyDeadline = 0;
+        nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
+        currencyExchangeStatus = message;
+        NotifyHelper.Instance().NotificationWarning(message);
+
+        if (exception == null)
+            Plugin.Log.Warning(
+                $"[OccultPotNotifier] Remote currency exchange timed out item={request.Spec.CurrencyItemID}, quantity={request.Quantity}");
+        else
+            Plugin.Log.Error(exception,
+                $"[OccultPotNotifier] Remote currency exchange failed item={request.Spec.CurrencyItemID}, quantity={request.Quantity}");
+    }
+
+    private static void CompleteCurrencyExchangeSession(uint eventID)
+    {
+        try
+        {
+            new EventCompletePackt(eventID, 0).Send();
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Warning(ex,
+                $"[OccultPotNotifier] Failed to complete remote currency exchange session event={eventID:X}");
         }
     }
 
@@ -1643,6 +1695,7 @@ internal sealed class OccultPotFeature : IDisposable
         pendingCurrencyExchange = null;
         pendingCurrencyBeforeCount = 0;
         pendingFixativeBeforeCount = 0;
+        pendingCurrencyActionAt = 0;
         pendingCurrencyDeadline = 0;
         nextCurrencyExchangeAt = 0;
         currencyExchangeStatus = string.Empty;
