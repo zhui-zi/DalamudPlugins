@@ -93,6 +93,8 @@ internal sealed class OccultPotFeature : IDisposable
     private long       autoDigLureMissingAt;
     private bool       undergroundDangerActive;
     private bool       allowUndergroundPositionUpdate;
+    private float?     undergroundPacketHeight;
+    private float?     undergroundSurfaceHeight;
     private TaskHelper? undergroundTestTask;
     private bool       undergroundTestActive;
     private bool       undergroundTestMovementReady;
@@ -296,11 +298,8 @@ internal sealed class OccultPotFeature : IDisposable
     private const long  AutoDigLureMissingGraceMS = 2_000;
     private const long  PostFateLureWaitMS = 20_000;
     private const long  TreasureProbeReadyTimeoutMS = 15_000;
-    private const float SouthHornUndergroundHeight          = -20f;
-    private const float NorthHornUndergroundHeight          = -23f;
-    private const float NorthHornUpperLeftUndergroundHeight = -70f;
-    private const float NorthHornUpperLeftBoundaryX         = -650f;
-    private const float NorthHornUpperLeftBoundaryZ         = -350f;
+    private const float UndergroundDepth     = 20f;
+    private const float UndergroundMinHeight = -5f;
     private const float PotTreasureOpenRadius = 5f;
     private const float UndergroundMoveSpeed = 24f;
     private const int   UndergroundSettleMS = 750;
@@ -816,7 +815,7 @@ internal sealed class OccultPotFeature : IDisposable
                 if (DangerZoneHandling == DangerZoneHandlingMode.Underground)
                 {
                     ImGui.TextColored(KnownColor.Orange.ToVector4(),
-                        "进入危险候选后按 DR 方式拦截位置更新；南征使用 Y=-20，北征使用 Y=-23，北征左上角使用 Y=-70。找到箱子后短暂回地面读条，完成即遁回地下。");
+                        "进入危险候选后按 DR 方式拦截位置更新；地下位置跟随当地地表并保持约 20 星码深度，最低 Y=-5。找到箱子后短暂回地面读条，完成即遁回地下。");
                     ImGui.TextColored(KnownColor.Red.ToVector4(),
                         "警告：无法隐藏撒娇罐，可能会引起绿玩惊诧。");
                     ImGui.TextColored(KnownColor.Gray.ToVector4(),
@@ -4341,6 +4340,8 @@ internal sealed class OccultPotFeature : IDisposable
     private unsafe void BeginUndergroundDangerMode()
     {
         undergroundDangerActive = true;
+        undergroundPacketHeight = null;
+        undergroundSurfaceHeight = null;
         autoDigStatus = "危险区：遁地移动";
         var playerController = PlayerController.Instance();
         if (playerController != null)
@@ -4353,21 +4354,17 @@ internal sealed class OccultPotFeature : IDisposable
             DService.Instance().Log.Information("[OccultPotNotifier] Leave underground danger route");
         undergroundDangerActive = false;
         allowUndergroundPositionUpdate = false;
+        undergroundPacketHeight = null;
+        undergroundSurfaceHeight = null;
         var playerController = PlayerController.Instance();
         if (playerController != null)
             playerController->MoveControllerWalk.IsMovementInputLocked = false;
     }
 
-    // DR uses a deeper height only for the northwest section of the North Horn outer loop.
-    private static float GetUndergroundHeight(uint territory, Vector3 position) =>
-        territory == OccultNorthTerritory
-            ? position.X <= NorthHornUpperLeftBoundaryX &&
-              position.Z <= NorthHornUpperLeftBoundaryZ
-                ? NorthHornUpperLeftUndergroundHeight
-                : NorthHornUndergroundHeight
-            : SouthHornUndergroundHeight;
+    private static float GetUndergroundHeight(Vector3 surfacePosition) =>
+        MathF.Max(surfacePosition.Y - UndergroundDepth, UndergroundMinHeight);
 
-    private static unsafe void MoveUndergroundTo(Vector3 position)
+    private unsafe void MoveUndergroundTo(Vector3 position)
     {
         if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer)
             return;
@@ -4377,22 +4374,36 @@ internal sealed class OccultPotFeature : IDisposable
             playerController->MoveState = 1;
 
         var current = localPlayer.Position;
-        var target = new Vector3(
-            position.X,
-            GetUndergroundHeight(GameState.TerritoryType, position),
-            position.Z);
-        var horizontalDelta = new Vector3(target.X, current.Y, target.Z) - current;
+        var horizontalDelta = new Vector3(position.X, current.Y, position.Z) - current;
         var distance = horizontalDelta.Length();
         var step = UndergroundMoveSpeed * GameState.DeltaTime;
-        var next = distance < 0.1f || step >= distance
-                       ? target
+        var reachedTarget = distance < 0.1f || step >= distance;
+        var next = reachedTarget
+                       ? new Vector3(position.X, current.Y, position.Z)
                        : current + (horizontalDelta / distance * step);
-        next.Y = target.Y;
 
-        ((GameObject*)localPlayer.Address)->SetPosition(next.X, next.Y, next.Z);
+        if (reachedTarget)
+            undergroundSurfaceHeight = position.Y;
+        else if (RaycastHelper.TryGetGroundHit(next, out var groundHit))
+            undergroundSurfaceHeight = groundHit.Point.Y;
+        else if (undergroundSurfaceHeight == null)
+            undergroundSurfaceHeight = current.Y;
+
+        var surfaceHeight = undergroundSurfaceHeight ?? position.Y;
+        var targetPacketHeight = GetUndergroundHeight(new Vector3(next.X, surfaceHeight, next.Z));
+        var currentPacketHeight = undergroundPacketHeight ?? targetPacketHeight;
+        var nextPacketHeight = targetPacketHeight < currentPacketHeight
+                                   ? targetPacketHeight
+                                   : MathF.Min(targetPacketHeight, currentPacketHeight + step);
+        undergroundPacketHeight = nextPacketHeight;
+
+        var localPosition = new Vector3(next.X, nextPacketHeight + UndergroundDepth, next.Z);
+        var packetPosition = new Vector3(next.X, nextPacketHeight, next.Z);
+
+        ((GameObject*)localPlayer.Address)->SetPosition(localPosition.X, localPosition.Y, localPosition.Z);
         new PositionUpdateInstancePacket(
             localPlayer.Rotation,
-            next,
+            packetPosition,
             PositionUpdateInstancePacket.MoveType.NormalMove0).Send();
     }
 
@@ -4487,7 +4498,7 @@ internal sealed class OccultPotFeature : IDisposable
             undergroundTestMoveOutward   = true;
             undergroundTestNextMoveAt    = Environment.TickCount64 + 1_500;
             undergroundTestMovementReady = true;
-            var undergroundHeight = GetUndergroundHeight(GameState.TerritoryType, player.Position);
+            var undergroundHeight = GetUndergroundHeight(player.Position);
             NotifyHelper.Instance().NotificationInfo(
                 $"遁地测试已进入 Y={undergroundHeight:F0}；将沿面向往返 {UndergroundTestMoveDistance:F0} 米，再次执行指令退出");
             return true;
@@ -5193,7 +5204,7 @@ internal sealed class OccultPotFeature : IDisposable
                 PositionUpdateInstancePacket.MoveType.NormalMove0;
             var undergroundPosition = new Vector3(
                 treasureInteractionOriginalPosition.X,
-                GetUndergroundHeight(GameState.TerritoryType, treasureInteractionOriginalPosition),
+                GetUndergroundHeight(treasureInteractionOriginalPosition),
                 treasureInteractionOriginalPosition.Z);
             allowUndergroundPositionUpdate = true;
             try
