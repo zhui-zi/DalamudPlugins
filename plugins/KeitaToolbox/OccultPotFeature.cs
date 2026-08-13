@@ -142,6 +142,15 @@ internal sealed class OccultPotFeature : IDisposable
     private string     autoReviveConfirmTargetName = string.Empty;
     private long       autoReviveConfirmUntil;
 
+    private readonly Queue<CurrencyExchangeRequest> currencyExchangeQueue = [];
+    private readonly Dictionary<uint, long> currencyExchangeRetryAfter = [];
+    private CurrencyExchangeRequest? pendingCurrencyExchange;
+    private int        pendingCurrencyBeforeCount;
+    private int        pendingFixativeBeforeCount;
+    private long       pendingCurrencyDeadline;
+    private long       nextCurrencyExchangeAt;
+    private string     currencyExchangeStatus = string.Empty;
+
     private bool       cofferHuntActive;
     private long       cofferHuntStartedAt;
     private uint       cofferHuntTerritory;
@@ -161,6 +170,24 @@ internal sealed class OccultPotFeature : IDisposable
     private volatile string crossDCReason = string.Empty;
 
     private const uint LureItemID = 2003296;
+
+    private const uint CurrencyExchangeNpcDataID = 1059485;
+    private const uint SilverCoinItemID           = 51975;
+    private const uint GoldCoinItemID             = 51976;
+    private const uint UltimateFixativeItemID      = 51978;
+    private const uint CurrencyExchangeCategory   = 0x2EF;
+    private const uint CurrencyExchangeAction     = 2;
+    private const int  CurrencyStackCap           = 9999;
+    private const long CurrencyExchangeConfirmTimeoutMS = 5_000;
+    private const long CurrencyExchangeRetryCooldownMS = 30_000;
+    private const long CurrencyExchangeSpacingMS = 1_000;
+
+    private static readonly CurrencyExchangeSpec SilverCurrencyExchange =
+        new("十二城邦白银币", SilverCoinItemID, 0x1B0614, 1200);
+    private static readonly CurrencyExchangeSpec GoldCurrencyExchange =
+        new("十二城邦白金币", GoldCoinItemID, 0x1B0615, 1920);
+    private static readonly CurrencyExchangeSpec[] CurrencyExchanges =
+        [SilverCurrencyExchange, GoldCurrencyExchange];
 
     private static readonly string[] DigDirections = ["西北", "西南", "东北", "东南", "正东", "正西", "正南", "正北"];
 
@@ -583,6 +610,12 @@ internal sealed class OccultPotFeature : IDisposable
             ImGui.EndTabItem();
         }
 
+        if (ImGui.BeginTabItem("货币兑换"))
+        {
+            ConfigUICurrencyExchange();
+            ImGui.EndTabItem();
+        }
+
         ImGui.EndTabBar();
     }
 
@@ -868,6 +901,45 @@ internal sealed class OccultPotFeature : IDisposable
         ConfigUIAutoRevive();
     }
 
+    private void ConfigUICurrencyExchange()
+    {
+        ConfigSection("终极固定剂兑换");
+        using (ImRaii.PushIndent())
+        {
+            if (ImGui.Checkbox("白银币或白金币达到 9999 时自动兑换", ref config.EnableAutoCurrencyExchange))
+                config.Save(this);
+
+            ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                "仅在北方海角安全状态下生效；直接向调查队的古钱鉴定师发送兑换包，不会移动、选中 NPC 或打开商店。\n" +
+                "白银币 1200 枚 / 白金币 1920 枚兑换 1 个终极固定剂。");
+
+            var silverCount = GetCurrencyCount(SilverCoinItemID);
+            var goldCount   = GetCurrencyCount(GoldCoinItemID);
+            ImGui.TextUnformatted($"十二城邦白银币: {silverCount}/{CurrencyStackCap}（可兑换 {silverCount / SilverCurrencyExchange.Cost} 个）");
+            ImGui.TextUnformatted($"十二城邦白金币: {goldCount}/{CurrencyStackCap}（可兑换 {goldCount / GoldCurrencyExchange.Cost} 个）");
+
+            var busy = pendingCurrencyExchange.HasValue || currencyExchangeQueue.Count > 0;
+            var canExchange = CanExchangeCurrenciesNow(out var unavailableReason);
+            var hasAffordableCurrency = silverCount >= SilverCurrencyExchange.Cost ||
+                                        goldCount >= GoldCurrencyExchange.Cost;
+            using (ImRaii.Disabled(busy || !canExchange || !hasAffordableCurrency))
+            {
+                if (ImGui.Button("立即全部兑换"))
+                    QueueAllCurrencyExchanges(false);
+            }
+
+            if (busy)
+                ImGui.TextColored(KnownColor.LightSkyBlue.ToVector4(), "兑换队列处理中…");
+            else if (!canExchange)
+                ImGui.TextColored(KnownColor.Gray.ToVector4(), unavailableReason);
+            else if (!hasAffordableCurrency)
+                ImGui.TextColored(KnownColor.Gray.ToVector4(), "当前两种货币均不足一次兑换。");
+
+            if (!string.IsNullOrWhiteSpace(currencyExchangeStatus))
+                ImGui.TextWrapped(currencyExchangeStatus);
+        }
+    }
+
     private void ConfigUIAutoRevive()
     {
         ConfigSection("辅助职业自动复活");
@@ -1050,6 +1122,7 @@ internal sealed class OccultPotFeature : IDisposable
         ResetAutoReviveCandidate();
         ResetAutoReviveConfirmation();
         autoReviveRetryAfter.Clear();
+        ResetCurrencyExchange();
         battleContentSettling = false;
         autoDigBocchiStoppedFor = -1;
         autoDigBocchiPreparationFor = -1;
@@ -1366,6 +1439,215 @@ internal sealed class OccultPotFeature : IDisposable
         autoReviveConfirmUntil      = 0;
     }
 
+    private static unsafe int GetCurrencyCount(uint itemID)
+    {
+        var inventory = InventoryManager.Instance();
+        return inventory == null ? 0 : inventory->GetInventoryItemCount(itemID);
+    }
+
+    private static bool CanExchangeCurrenciesNow(out string reason)
+    {
+        if (GameState.TerritoryType != OccultNorthTerritory)
+        {
+            reason = "仅可在新月岛北方海角使用。";
+            return false;
+        }
+
+        if (InForkedTower)
+        {
+            reason = "歧路之塔内暂停兑换。";
+            return false;
+        }
+
+        var localPlayer = DService.Instance().ObjectTable.LocalPlayer;
+        if (localPlayer is not { IsDead: false })
+        {
+            reason = "角色未登录或已倒地。";
+            return false;
+        }
+
+        var condition = DService.Instance().Condition;
+        if (condition[ConditionFlag.BetweenAreas] || condition[ConditionFlag.BetweenAreas51])
+        {
+            reason = "过图期间暂停兑换。";
+            return false;
+        }
+
+        if (condition[ConditionFlag.InCombat])
+        {
+            reason = "战斗中暂停兑换。";
+            return false;
+        }
+
+        if (condition[ConditionFlag.OccupiedInQuestEvent])
+        {
+            reason = "事件占用期间暂停兑换。";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private void QueueAllCurrencyExchanges(bool automatic)
+    {
+        if (pendingCurrencyExchange.HasValue || currencyExchangeQueue.Count > 0)
+            return;
+
+        if (!CanExchangeCurrenciesNow(out var reason))
+        {
+            if (!automatic)
+                currencyExchangeStatus = reason;
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        var queued = 0;
+        foreach (var exchange in CurrencyExchanges)
+        {
+            var count = GetCurrencyCount(exchange.CurrencyItemID);
+            if (count < exchange.Cost || automatic && count < CurrencyStackCap)
+                continue;
+
+            if (automatic &&
+                currencyExchangeRetryAfter.TryGetValue(exchange.CurrencyItemID, out var retryAfter) &&
+                now < retryAfter)
+                continue;
+
+            currencyExchangeQueue.Enqueue(new(exchange, automatic, 0));
+            queued++;
+        }
+
+        if (queued == 0)
+        {
+            if (!automatic)
+                currencyExchangeStatus = "当前两种货币均不足一次兑换。";
+            return;
+        }
+
+        currencyExchangeStatus = automatic
+                                     ? "检测到货币达到 9999，已加入自动兑换队列。"
+                                     : $"已加入 {queued} 种货币的全部兑换队列。";
+    }
+
+    private void DriveCurrencyExchange()
+    {
+        if (GameState.TerritoryType != OccultNorthTerritory)
+            return;
+
+        var now = Environment.TickCount64;
+        if (pendingCurrencyExchange is { } pending)
+        {
+            var currentCount = GetCurrencyCount(pending.Spec.CurrencyItemID);
+            var currentFixativeCount = GetCurrencyCount(UltimateFixativeItemID);
+            var expectedCurrencyCount = pendingCurrencyBeforeCount - pending.Quantity * pending.Spec.Cost;
+            var currencyConfirmed = currentCount <= expectedCurrencyCount;
+            var fixativeConfirmed = currentFixativeCount >= pendingFixativeBeforeCount + pending.Quantity;
+            if (currencyConfirmed || fixativeConfirmed)
+            {
+                currencyExchangeRetryAfter.Remove(pending.Spec.CurrencyItemID);
+                pendingCurrencyExchange = null;
+                pendingCurrencyBeforeCount = 0;
+                pendingFixativeBeforeCount = 0;
+                pendingCurrencyDeadline = 0;
+                nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
+
+                var message = $"{pending.Spec.Name}已兑换为终极固定剂 ×{pending.Quantity}";
+                currencyExchangeStatus = currencyExchangeQueue.Count == 0
+                                             ? $"{message}；本轮兑换完成。"
+                                             : $"{message}；正在等待下一种货币。";
+                NotifyHelper.Instance().Chat(message);
+                Plugin.Log.Information(
+                    $"[OccultPotNotifier] Confirmed remote currency exchange item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
+                return;
+            }
+
+            if (now < pendingCurrencyDeadline)
+                return;
+
+            currencyExchangeRetryAfter[pending.Spec.CurrencyItemID] = now + CurrencyExchangeRetryCooldownMS;
+            pendingCurrencyExchange = null;
+            pendingCurrencyBeforeCount = 0;
+            pendingFixativeBeforeCount = 0;
+            pendingCurrencyDeadline = 0;
+            nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
+
+            currencyExchangeStatus = pending.Automatic
+                                         ? $"未确认{pending.Spec.Name}库存下降，30 秒后再自动尝试。"
+                                         : $"未确认{pending.Spec.Name}库存下降，请检查背包容量后重试。";
+            NotifyHelper.Instance().NotificationWarning(currencyExchangeStatus);
+            Plugin.Log.Warning(
+                $"[OccultPotNotifier] Remote currency exchange timed out item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
+            return;
+        }
+
+        if (!CanExchangeCurrenciesNow(out _))
+            return;
+
+        if (currencyExchangeQueue.Count == 0 && config.EnableAutoCurrencyExchange)
+            QueueAllCurrencyExchanges(true);
+
+        if (now < nextCurrencyExchangeAt)
+            return;
+
+        while (currencyExchangeQueue.Count > 0)
+        {
+            var request = currencyExchangeQueue.Dequeue();
+            if (request.Automatic && !config.EnableAutoCurrencyExchange)
+                continue;
+
+            var currentCount = GetCurrencyCount(request.Spec.CurrencyItemID);
+            if (request.Automatic && currentCount < CurrencyStackCap)
+                continue;
+
+            var quantity = currentCount / request.Spec.Cost;
+            if (quantity <= 0)
+                continue;
+
+            try
+            {
+                var fixativeBeforeCount = GetCurrencyCount(UltimateFixativeItemID);
+                new EventActionPacket(
+                    request.Spec.EventID,
+                    CurrencyExchangeCategory,
+                    CurrencyExchangeAction,
+                    UltimateFixativeItemID,
+                    (uint)quantity).Send();
+
+                pendingCurrencyExchange = request with { Quantity = quantity };
+                pendingCurrencyBeforeCount = currentCount;
+                pendingFixativeBeforeCount = fixativeBeforeCount;
+                pendingCurrencyDeadline = now + CurrencyExchangeConfirmTimeoutMS;
+                currencyExchangeStatus = $"已发送{request.Spec.Name}兑换 ×{quantity}，等待库存确认…";
+                Plugin.Log.Information(
+                    $"[OccultPotNotifier] Sent remote currency exchange npc={CurrencyExchangeNpcDataID}, event={request.Spec.EventID:X}, item={request.Spec.CurrencyItemID}, quantity={quantity}");
+            }
+            catch (Exception ex)
+            {
+                currencyExchangeRetryAfter[request.Spec.CurrencyItemID] = now + CurrencyExchangeRetryCooldownMS;
+                nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
+                currencyExchangeStatus = $"发送{request.Spec.Name}兑换包失败。";
+                NotifyHelper.Instance().NotificationWarning(currencyExchangeStatus);
+                Plugin.Log.Error(ex,
+                    $"[OccultPotNotifier] Failed to send remote currency exchange item={request.Spec.CurrencyItemID}, quantity={quantity}");
+            }
+
+            return;
+        }
+    }
+
+    private void ResetCurrencyExchange()
+    {
+        currencyExchangeQueue.Clear();
+        currencyExchangeRetryAfter.Clear();
+        pendingCurrencyExchange = null;
+        pendingCurrencyBeforeCount = 0;
+        pendingFixativeBeforeCount = 0;
+        pendingCurrencyDeadline = 0;
+        nextCurrencyExchangeAt = 0;
+        currencyExchangeStatus = string.Empty;
+    }
+
     private void OnUpdate(IFramework _)
     {
         TryAutoDeclineInvite();
@@ -1383,6 +1665,8 @@ internal sealed class OccultPotFeature : IDisposable
             DriveAutoDig(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             return;
         }
+
+        DriveCurrencyExchange();
 
         if (pendingArchivistReplyTime > 0 && Environment.TickCount64 >= pendingArchivistReplyTime)
         {
@@ -5738,6 +6022,17 @@ internal sealed class OccultPotFeature : IDisposable
         Underground
     }
 
+    private readonly record struct CurrencyExchangeSpec(
+        string Name,
+        uint CurrencyItemID,
+        uint EventID,
+        int Cost);
+
+    private readonly record struct CurrencyExchangeRequest(
+        CurrencyExchangeSpec Spec,
+        bool Automatic,
+        int Quantity);
+
     private sealed class Config
     {
         public PotDisplayMode DisplayMode      = PotDisplayMode.DtrBar;
@@ -5783,6 +6078,7 @@ internal sealed class OccultPotFeature : IDisposable
 
         public bool      EnableAutoRevive;
         public bool      AutoRevivePartyOnly = true;
+        public bool      EnableAutoCurrencyExchange;
 
         public static Config Load(OccultPotFeature _)
         {
