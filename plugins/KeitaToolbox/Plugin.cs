@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Addon.Lifecycle;
@@ -24,6 +25,8 @@ public sealed class Plugin : IDalamudPlugin
     private const string ShortCommand = "/ktb";
     private const string UnlockEndpoint =
         "https://dalamudunlock.ff14.cafe/toolbox/unlock";
+    private const string UsageEndpoint =
+        "https://pluginping.keita.cc/v1/heartbeat";
 
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
@@ -64,9 +67,16 @@ public sealed class Plugin : IDalamudPlugin
     {
         Timeout = TimeSpan.FromSeconds(10),
     };
+    private readonly HttpClient usageClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(10),
+    };
+    private readonly CancellationTokenSource usageCancellation = new();
     private string protectedPassword = string.Empty;
     private Task<bool>? unlockTask;
+    private Task? usageTask;
     private string unlockError = string.Empty;
+    private long completedUsageTimestamp;
     private bool windowOpen;
 
     public Plugin()
@@ -128,6 +138,7 @@ public sealed class Plugin : IDalamudPlugin
         });
 
         WarnAboutLegacyPlugins();
+        usageTask = SendUsageAsync(usageCancellation.Token);
         Log.Information("Keita Toolbox enabled.");
     }
 
@@ -150,6 +161,9 @@ public sealed class Plugin : IDalamudPlugin
         autoLeaveFeature?.Dispose();
         autoInviteFeature?.Dispose();
         basicFeatures?.Dispose();
+        usageCancellation.Cancel();
+        usageClient.Dispose();
+        usageCancellation.Dispose();
         unlockClient.Dispose();
         Scheduler.Clear();
         if (omenServicesInitialized)
@@ -174,6 +188,7 @@ public sealed class Plugin : IDalamudPlugin
             Scheduler.Update();
             advancedToolsFeature?.UpdateMouseTeleport();
             verificationMonitorFeature?.Update();
+            CompleteUsageRequest();
         }
         catch (Exception ex)
         {
@@ -430,6 +445,76 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private sealed record UnlockRequest(string Password);
+
+    private async Task SendUsageAsync(CancellationToken cancellationToken)
+    {
+        var lastSuccess = Config.LastUsageUnixSeconds;
+        var firstAttempt = true;
+        try
+        {
+            while (true)
+            {
+                var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                var delaySeconds = Math.Clamp(
+                    lastSuccess + (long)TimeSpan.FromDays(1).TotalSeconds - now,
+                    0,
+                    (long)TimeSpan.FromDays(1).TotalSeconds);
+                if (firstAttempt && delaySeconds == 0)
+                    delaySeconds = Random.Shared.Next(30, 121);
+                if (delaySeconds > 0)
+                {
+                    await Task.Delay(
+                        TimeSpan.FromSeconds(delaySeconds),
+                        cancellationToken);
+                }
+
+                try
+                {
+                    using var response = await usageClient.PostAsJsonAsync(
+                        UsageEndpoint,
+                        new UsageRequest(
+                            Config.AnonymousInstallId,
+                            typeof(Plugin).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"),
+                        cancellationToken);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        lastSuccess = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                        Interlocked.Exchange(ref completedUsageTimestamp, lastSuccess);
+                    }
+                    else
+                    {
+                        await Task.Delay(TimeSpan.FromHours(6), cancellationToken);
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "A background service request failed.");
+                    await Task.Delay(TimeSpan.FromHours(6), cancellationToken);
+                }
+
+                firstAttempt = false;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void CompleteUsageRequest()
+    {
+        var timestamp = Interlocked.Exchange(ref completedUsageTimestamp, 0);
+        if (timestamp == 0)
+            return;
+
+        Config.LastUsageUnixSeconds = timestamp;
+        Config.Save();
+    }
+
+    private sealed record UsageRequest(string InstallId, string Version);
 
     private static void DrawInstantReturnSettings()
     {

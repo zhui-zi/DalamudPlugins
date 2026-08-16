@@ -10,8 +10,10 @@ namespace KeitaToolbox;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
     public bool ProtectedFeaturesUnlocked { get; set; }
+    public string AnonymousInstallId { get; set; } = string.Empty;
+    public long LastUsageUnixSeconds { get; set; }
 
     public FeatureSwitches Features { get; set; } = new();
     public BmraiSettings Bmrai { get; set; } = new();
@@ -70,9 +72,15 @@ public sealed class Configuration : IPluginConfiguration
         VerificationMonitor.LastNotifiedExpiryUnixSeconds ??= [];
         VerificationMonitor.LastKnownExpiryUnixSeconds ??= [];
 
-        if (Version < 3)
+        if (!Guid.TryParseExact(AnonymousInstallId, "N", out _))
         {
-            Version = 3;
+            AnonymousInstallId = Guid.NewGuid().ToString("N");
+            changed = true;
+        }
+
+        if (Version < 4)
+        {
+            Version = 4;
             changed = true;
         }
 
