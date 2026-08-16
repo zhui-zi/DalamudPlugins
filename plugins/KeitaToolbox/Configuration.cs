@@ -10,7 +10,7 @@ namespace KeitaToolbox;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
     public bool ProtectedFeaturesUnlocked { get; set; }
 
     public FeatureSwitches Features { get; set; } = new();
@@ -27,6 +27,7 @@ public sealed class Configuration : IPluginConfiguration
     public OccultPotSettings OccultPot { get; set; } = new();
     public string OccultPotAssistantConfig { get; set; } = string.Empty;
     public AeAssistStartupSettings AeAssistStartup { get; set; } = new();
+    public VerificationMonitorSettings VerificationMonitor { get; set; } = new();
 
     [NonSerialized]
     private IDalamudPluginInterface? pluginInterface;
@@ -65,9 +66,13 @@ public sealed class Configuration : IPluginConfiguration
             }
         }
 
-        if (Version < 2)
+        VerificationMonitor ??= new VerificationMonitorSettings();
+        VerificationMonitor.LastNotifiedExpiryUnixSeconds ??= [];
+        VerificationMonitor.LastKnownExpiryUnixSeconds ??= [];
+
+        if (Version < 3)
         {
-            Version = 2;
+            Version = 3;
             changed = true;
         }
 
@@ -217,6 +222,18 @@ public sealed class AeAssistStartupSettings
 {
     public bool Enabled { get; set; } = true;
     public bool PrintChatMessage { get; set; } = true;
+}
+
+[Serializable]
+public sealed class VerificationMonitorSettings
+{
+    public bool Enabled { get; set; } = true;
+    public bool ShowServerInfoBar { get; set; } = true;
+    public bool NotifyWithDalamud { get; set; } = true;
+    public bool NotifyWithGameToast { get; set; }
+    public bool NotifyWithChat { get; set; }
+    public Dictionary<string, long> LastNotifiedExpiryUnixSeconds { get; set; } = [];
+    public Dictionary<string, long> LastKnownExpiryUnixSeconds { get; set; } = [];
 }
 
 [Serializable]

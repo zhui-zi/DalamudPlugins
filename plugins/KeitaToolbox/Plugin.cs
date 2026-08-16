@@ -40,6 +40,8 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPartyFinderGui PartyFinder { get; private set; } = null!;
     [PluginService] internal static IGameInteropProvider Interop { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static IDtrBar DtrBar { get; private set; } = null!;
+    [PluginService] internal static IToastGui Toasts { get; private set; } = null!;
     [PluginService] internal static INotificationManager Notifications { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
@@ -56,6 +58,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly MapGearsetFeature? mapGearsetFeature;
     private readonly OccultPotFeature? occultPotFeature;
     private readonly AeAssistStartupFeature? aeAssistStartupFeature;
+    private readonly VerificationMonitorFeature? verificationMonitorFeature;
     private readonly bool omenServicesInitialized;
     private readonly HttpClient unlockClient = new()
     {
@@ -107,6 +110,9 @@ public sealed class Plugin : IDalamudPlugin
         aeAssistStartupFeature = CreateFeature(
             "AEAssist startup automation",
             () => new AeAssistStartupFeature());
+        verificationMonitorFeature = CreateFeature(
+            "plugin verification monitor",
+            () => new VerificationMonitorFeature());
 
         Framework.Update += OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw += DrawWindow;
@@ -134,6 +140,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= DrawWindow;
         Framework.Update -= OnFrameworkUpdate;
 
+        verificationMonitorFeature?.Dispose();
         aeAssistStartupFeature?.Dispose();
         occultPotFeature?.Dispose();
         mapGearsetFeature?.Dispose();
@@ -166,6 +173,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             Scheduler.Update();
             advancedToolsFeature?.UpdateMouseTeleport();
+            verificationMonitorFeature?.Update();
         }
         catch (Exception ex)
         {
@@ -280,6 +288,13 @@ public sealed class Plugin : IDalamudPlugin
                     DrawUnavailable("魔法罐助手");
                 else
                     occultPotFeature.DrawSettings();
+            });
+            DrawTab("验证", () =>
+            {
+                if (verificationMonitorFeature == null)
+                    DrawUnavailable("插件验证监控");
+                else
+                    verificationMonitorFeature.DrawSettings();
             });
             ImGui.EndTabBar();
         }

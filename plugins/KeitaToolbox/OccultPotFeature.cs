@@ -306,6 +306,10 @@ internal sealed class OccultPotFeature : IDisposable
     private const float UndergroundMinHeight = -5f;
     private const float PotTreasureOpenRadius = 5f;
     private const float UndergroundMoveSpeed = 24f;
+    private const float UndergroundReturnSpeed = 6f;
+    private const float UndergroundReturnMaxStep = 0.5f;
+    private const float UndergroundReturnTolerance = 0.05f;
+    private const int   UndergroundReturnTimeoutMS = 8_000;
     private const int   UndergroundSettleMS = 750;
     private const int   MountTimeoutMS      = 20_000;
     private const float UndergroundTestMoveDistance  = 12f;
@@ -4406,6 +4410,8 @@ internal sealed class OccultPotFeature : IDisposable
     {
         if (autoDigTask == null) return;
 
+        long deadline = 0;
+        float startPacketHeight = 0;
         autoDigTask.Enqueue(() =>
         {
             if (!undergroundDangerActive) return true;
@@ -4413,15 +4419,42 @@ internal sealed class OccultPotFeature : IDisposable
                 DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false } localPlayer)
                 return FailAutoDigMovement("未能保持坐骑状态，已停止遁地寻宝");
 
-            VnavStop();
+            var now = Environment.TickCount64;
+            if (deadline == 0)
+            {
+                deadline          = now + UndergroundReturnTimeoutMS;
+                startPacketHeight = undergroundPacketHeight ?? GetUndergroundHeight(position);
+                VnavStop();
+                autoDigStatus = "危险区：平滑返回地表";
+                DService.Instance().Log.Information(
+                    $"[OccultPotNotifier] Smooth surface return started: Y={startPacketHeight:F2} -> {position.Y:F2}");
+            }
+
+            if (now >= deadline)
+                return FailAutoDigMovement("平滑返回地表超时，已停止遁地寻宝");
+
+            var currentPacketHeight = undergroundPacketHeight ?? startPacketHeight;
+            var remainingHeight     = position.Y - currentPacketHeight;
+            var maxStep = MathF.Min(
+                UndergroundReturnSpeed * MathF.Max(GameState.DeltaTime, 0f),
+                UndergroundReturnMaxStep);
+            if (maxStep <= 0f) return false;
+
+            var step = MathF.Min(MathF.Abs(remainingHeight), maxStep);
+            var nextPacketHeight = currentPacketHeight + MathF.CopySign(step, remainingHeight);
+            if (MathF.Abs(remainingHeight) <= UndergroundReturnTolerance || step >= MathF.Abs(remainingHeight))
+                nextPacketHeight = position.Y;
+
             allowUndergroundPositionUpdate = true;
             try
             {
                 ((GameObject*)localPlayer.Address)->SetPosition(position.X, position.Y, position.Z);
                 new PositionUpdateInstancePacket(
                     localPlayer.Rotation,
-                    position,
+                    new Vector3(position.X, nextPacketHeight, position.Z),
                     PositionUpdateInstancePacket.MoveType.NormalMove0).Send();
+                undergroundPacketHeight  = nextPacketHeight;
+                undergroundSurfaceHeight = position.Y;
             }
             catch
             {
@@ -4432,9 +4465,11 @@ internal sealed class OccultPotFeature : IDisposable
                 allowUndergroundPositionUpdate = false;
             }
 
+            if (nextPacketHeight != position.Y) return false;
+
             EndUndergroundDangerMode();
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Returned to surface before lure use: {position.X:F2}, {position.Y:F2}, {position.Z:F2}");
+                $"[OccultPotNotifier] Smooth surface return completed: {position.X:F2}, {position.Y:F2}, {position.Z:F2}");
             return true;
         });
     }
