@@ -165,6 +165,8 @@ internal sealed class OccultPotFeature : IDisposable
     private long       pendingCofferHuntAutoDigFor = -1;
     private const long CofferHuntRequiredLeadSeconds = 600;
     private const long CofferHuntStopLeadSeconds     = 300;
+    private const int  CofferHuntSilverCap           = 8;
+    private const int  CofferHuntBronzeCap           = 30;
     private const long PostBattleCheckTimeoutMS      = 180_000;
     private const long BmrAiSuppressionReleaseGraceMS = 500;
     private const uint TreasuresightActionID         = 0xA2B3;
@@ -850,15 +852,15 @@ internal sealed class OccultPotFeature : IDisposable
                     config.Save(this);
                 using (ImRaii.Disabled(config.AutoDigStopOnDeath))
                 {
-                    if (ImGui.Checkbox("死亡后自动归返起始点", ref config.AutoDigReturnOnDeath))
+                    if (ImGui.Checkbox("死亡后自动返回起始点", ref config.AutoDigReturnOnDeath))
                         config.Save(this);
                     using (ImRaii.Disabled(!config.AutoDigReturnOnDeath))
                     {
-                        if (ImGui.Checkbox("仅死亡 3 分钟仍无人施救时归返", ref config.AutoDigWaitForRescue))
+                        if (ImGui.Checkbox("仅死亡 3 分钟仍无人施救时返回", ref config.AutoDigWaitForRescue))
                             config.Save(this);
                         if (config.AutoDigWaitForRescue)
                             ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                                "等待施救期间不发送罐子通知、语音或聊天消息；开始自动归返后恢复通知。");
+                                "等待施救期间不发送罐子通知、语音或聊天消息；开始自动返回后恢复通知。");
                     }
                 }
 
@@ -881,7 +883,7 @@ internal sealed class OccultPotFeature : IDisposable
                         if (ImGui.Checkbox("DR 寻宝使用外环路线", ref config.CofferHuntOuterLoop))
                             config.Save(this);
                         ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                            "BOCCHI 返回并使用魔寻宝后，仅在青铜 > 15、白银 > 2、下个罐子 > 10 分钟时开启。\n" +
+                            $"BOCCHI 返回并使用魔寻宝后，仅在白银达到 {CofferHuntSilverCap} 或青铜达到 {CofferHuntBronzeCap}，且下个罐子 > 10 分钟时开启。\n" +
                             "需启用 BOCCHI 自动魔寻宝，以及 DR「新月岛综合助手」模块；传送到非起始点魔路水晶后，仅在周围 50 yalms 无其他玩家时启动，发现玩家则换水晶重试。\n" +
                             "进入 5 分钟自动前往窗口后回程并衔接挖罐；否则回程并恢复 BOCCHI 非法模式。");
                     }
@@ -1196,6 +1198,9 @@ internal sealed class OccultPotFeature : IDisposable
 
     private void OnAutoDigSafety(IFramework _)
     {
+        if (config.EnableCofferHunt && InOccultMapZone)
+            ObserveTreasuresightCast();
+
         RestoreBocchiAfterEmergencyReturn();
 
         if (ShouldEmergencyReturn(DService.Instance().ObjectTable.LocalPlayer))
@@ -1877,7 +1882,6 @@ internal sealed class OccultPotFeature : IDisposable
         if (undergroundTestActive) return;
 
         DrivePostBattleCofferHunt(now);
-        ObserveTreasuresightCast();
         MaybeStopCofferHunt(now);
         MaybeCofferHuntDone();
         CheckStandbyDeath();
@@ -2678,7 +2682,7 @@ internal sealed class OccultPotFeature : IDisposable
         if (!autoDigDying)
         {
             autoDigDying  = true;
-            autoDigStatus = config.AutoDigWaitForRescue ? "死亡，等待施救" : "死亡归返";
+            autoDigStatus = config.AutoDigWaitForRescue ? "死亡，等待施救" : "死亡返回";
             awaitingDirection = false;
             ResetAutoDigCandidateSearch();
             BeginDeathReturn();
@@ -2720,7 +2724,7 @@ internal sealed class OccultPotFeature : IDisposable
         if (!deathReturnStarted)
         {
             deathReturnStarted = true;
-            autoDigStatus      = "死亡归返";
+            autoDigStatus      = "死亡返回";
             NotifyDeath();
         }
 
@@ -2733,7 +2737,7 @@ internal sealed class OccultPotFeature : IDisposable
 
     private void NotifyDeath()
     {
-        NotifyHelper.Instance().NotificationInfo("检测到死亡，自动归返起始点…");
+        NotifyHelper.Instance().NotificationInfo("检测到死亡，自动返回起始点…");
     }
 
     private void CheckStandbyDeath()
@@ -2750,7 +2754,7 @@ internal sealed class OccultPotFeature : IDisposable
             if (!standbyDeathReturning)
             {
                 standbyDeathReturning = true;
-                autoDigStatus = "死亡归返";
+                autoDigStatus = "死亡返回";
                 StopCofferHunt();
                 VnavStop();
                 if (config.AutoDigWaitForRescue) autoDigStatus = "死亡，等待施救";
@@ -3303,7 +3307,7 @@ internal sealed class OccultPotFeature : IDisposable
             return;
 
         ResetPostBattleCofferCheck();
-        if (bronzeChests <= 15 || silverChests <= 2) return;
+        if (silverChests < CofferHuntSilverCap && bronzeChests < CofferHuntBronzeCap) return;
 
         autoDigTask ??= new();
         autoDigTask.Abort();
@@ -3311,7 +3315,7 @@ internal sealed class OccultPotFeature : IDisposable
         autoDigStatus = $"宝箱数量满足：青铜 {bronzeChests} / 白银 {silverChests}";
         SendCommand("/bocchiillegal off");
         NotifyHelper.Instance().NotificationInfo(
-            $"宝箱数量满足自动寻宝：青铜 {bronzeChests}、白银 {silverChests}");
+            $"宝箱达到上限，开始自动寻宝：白银 {silverChests}、青铜 {bronzeChests}");
         StartCofferHunt();
     }
 
