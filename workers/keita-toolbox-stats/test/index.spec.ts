@@ -61,7 +61,11 @@ describe("worker", () => {
     });
     expect(denied.status).toBe(403);
     expect(allowed.status).toBe(200);
-    expect(await allowed.text()).toContain("Known installs");
+    const html = await allowed.text();
+    expect(html).toContain('lang="zh-CN"');
+    expect(html).toContain("已记录安装");
+    expect(html).toContain("每日活跃安装数");
+    expect(html).not.toContain("Known installs");
   });
 
   it("isolates the public and private hosts", async () => {
