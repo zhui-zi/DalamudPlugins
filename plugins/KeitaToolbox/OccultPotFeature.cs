@@ -95,6 +95,7 @@ internal sealed class OccultPotFeature : IDisposable
     private bool       allowUndergroundPositionUpdate;
     private float?     undergroundPacketHeight;
     private float?     undergroundSurfaceHeight;
+    private long       undergroundLastPositionUpdateAt;
     private TaskHelper? undergroundTestTask;
     private bool       undergroundTestActive;
     private bool       undergroundTestMovementReady;
@@ -313,6 +314,8 @@ internal sealed class OccultPotFeature : IDisposable
     private const float UndergroundReturnMaxStep = 0.5f;
     private const float UndergroundReturnTolerance = 0.05f;
     private const int   UndergroundReturnTimeoutMS = 8_000;
+    private const int   UndergroundPositionUpdateIntervalMS = 100;
+    private const int   UndergroundPositionUpdateMaxElapsedMS = 250;
     private const int   UndergroundSettleMS = 750;
     private const int   MountTimeoutMS      = 20_000;
     private const float UndergroundTestMoveDistance  = 12f;
@@ -4470,18 +4473,19 @@ internal sealed class OccultPotFeature : IDisposable
                 VnavStop();
                 autoDigStatus = "危险区：平滑返回地表";
                 DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Smooth surface return started: Y={startPacketHeight:F2} -> {position.Y:F2}");
+                    $"[OccultPotNotifier] Smooth surface return started: Y={startPacketHeight:F2} -> {position.Y:F2}; " +
+                    $"depth={position.Y - startPacketHeight:F2}");
             }
 
             if (now >= deadline)
                 return FailAutoDigMovement("平滑返回地表超时，已停止遁地寻宝");
 
+            if (!TryBeginUndergroundPositionUpdate(UndergroundReturnSpeed, out var maxStep))
+                return false;
+
+            maxStep = MathF.Min(maxStep, UndergroundReturnMaxStep);
             var currentPacketHeight = undergroundPacketHeight ?? startPacketHeight;
             var remainingHeight     = position.Y - currentPacketHeight;
-            var maxStep = MathF.Min(
-                UndergroundReturnSpeed * MathF.Max(GameState.DeltaTime, 0f),
-                UndergroundReturnMaxStep);
-            if (maxStep <= 0f) return false;
 
             var step = MathF.Min(MathF.Abs(remainingHeight), maxStep);
             var nextPacketHeight = currentPacketHeight + MathF.CopySign(step, remainingHeight);
@@ -4576,7 +4580,7 @@ internal sealed class OccultPotFeature : IDisposable
 
 
 
-            if (now >= settleAfter && Arrived(position, tolerance)) return true;
+            if (now >= settleAfter && UndergroundArrived(position, tolerance)) return true;
             if (now >= deadline)
                 return FailAutoDigMovement("遁地移动超时，未到达目标点，已安全停止");
 
@@ -4589,6 +4593,7 @@ internal sealed class OccultPotFeature : IDisposable
         undergroundDangerActive = true;
         undergroundPacketHeight = null;
         undergroundSurfaceHeight = null;
+        undergroundLastPositionUpdateAt = 0;
         autoDigStatus = "危险区：遁地移动";
         var playerController = PlayerController.Instance();
         if (playerController != null)
@@ -4603,6 +4608,7 @@ internal sealed class OccultPotFeature : IDisposable
         allowUndergroundPositionUpdate = false;
         undergroundPacketHeight = null;
         undergroundSurfaceHeight = null;
+        undergroundLastPositionUpdateAt = 0;
         var playerController = PlayerController.Instance();
         if (playerController != null)
             playerController->MoveControllerWalk.IsMovementInputLocked = false;
@@ -4611,9 +4617,38 @@ internal sealed class OccultPotFeature : IDisposable
     private static float GetUndergroundHeight(Vector3 surfacePosition) =>
         MathF.Max(surfacePosition.Y - UndergroundDepth, UndergroundMinHeight);
 
+    private bool UndergroundArrived(Vector3 position, float tolerance)
+    {
+        if (!Arrived(position, tolerance) || undergroundPacketHeight is not { } packetHeight)
+            return false;
+
+        return MathF.Abs(packetHeight - GetUndergroundHeight(position)) <= UndergroundReturnTolerance;
+    }
+
+    private bool TryBeginUndergroundPositionUpdate(float speed, out float step)
+    {
+        var now = Environment.TickCount64;
+        var elapsedMs = undergroundLastPositionUpdateAt == 0
+                            ? UndergroundPositionUpdateIntervalMS
+                            : now - undergroundLastPositionUpdateAt;
+        if (elapsedMs < UndergroundPositionUpdateIntervalMS)
+        {
+            step = 0f;
+            return false;
+        }
+
+        undergroundLastPositionUpdateAt = now;
+        elapsedMs = Math.Min(elapsedMs, UndergroundPositionUpdateMaxElapsedMS);
+        step = speed * elapsedMs / 1000f;
+        return step > 0f;
+    }
+
     private unsafe void MoveUndergroundTo(Vector3 position)
     {
         if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer)
+            return;
+
+        if (!TryBeginUndergroundPositionUpdate(UndergroundMoveSpeed, out var step))
             return;
 
         var playerController = PlayerController.Instance();
@@ -4623,7 +4658,6 @@ internal sealed class OccultPotFeature : IDisposable
         var current = localPlayer.Position;
         var horizontalDelta = new Vector3(position.X, current.Y, position.Z) - current;
         var distance = horizontalDelta.Length();
-        var step = UndergroundMoveSpeed * GameState.DeltaTime;
         var reachedTarget = distance < 0.1f || step >= distance;
         var next = reachedTarget
                        ? new Vector3(position.X, current.Y, position.Z)
@@ -4639,9 +4673,10 @@ internal sealed class OccultPotFeature : IDisposable
         var surfaceHeight = undergroundSurfaceHeight ?? position.Y;
         var targetPacketHeight = GetUndergroundHeight(new Vector3(next.X, surfaceHeight, next.Z));
         var currentPacketHeight = undergroundPacketHeight ?? targetPacketHeight;
-        var nextPacketHeight = targetPacketHeight < currentPacketHeight
+        var packetHeightDelta = targetPacketHeight - currentPacketHeight;
+        var nextPacketHeight = MathF.Abs(packetHeightDelta) <= step
                                    ? targetPacketHeight
-                                   : MathF.Min(targetPacketHeight, currentPacketHeight + step);
+                                   : currentPacketHeight + MathF.CopySign(step, packetHeightDelta);
         undergroundPacketHeight = nextPacketHeight;
 
         var localPosition = new Vector3(next.X, nextPacketHeight + UndergroundDepth, next.Z);
@@ -7139,13 +7174,15 @@ internal sealed class OccultPotFeature : IDisposable
                         lastCast = cast;
                 }
 
-                if (lastCast <= completedAt || lastParsed < lastCast) return false;
+                if (lastParsed <= completedAt) return false;
+                if (lastCast > completedAt && lastParsed < lastCast) return false;
 
                 bronzeChests = Convert.ToInt32(GetMember(tracker, "BronzeChests") ?? 0);
                 silverChests = Convert.ToInt32(GetMember(tracker, "SilverChests") ?? 0);
                 DService.Instance().Log.Information(
                     $"[OccultPotNotifier] BOCCHI treasure scan acquired via {source}: " +
-                    $"cast={lastCast:O}, parsed={lastParsed:O}, bronze={bronzeChests}, silver={silverChests}");
+                    $"cast={(lastCast > completedAt ? lastCast.ToString("O") : "unavailable")}, " +
+                    $"parsed={lastParsed:O}, bronze={bronzeChests}, silver={silverChests}");
                 return true;
             }
             catch
