@@ -162,6 +162,7 @@ internal sealed class OccultPotFeature : IDisposable
     private long       cofferHuntStartedAt;
     private uint       cofferHuntTerritory;
     private bool       drHuntStarted;
+    private bool       drOuterRouteActive;
     private long       pendingCofferHuntAutoDigFor = -1;
     private const long CofferHuntRequiredLeadSeconds = 600;
     private const long CofferHuntStopLeadSeconds     = 300;
@@ -880,11 +881,9 @@ internal sealed class OccultPotFeature : IDisposable
                 {
                     using (ImRaii.PushIndent())
                     {
-                        if (ImGui.Checkbox("DR 寻宝使用外环路线", ref config.CofferHuntOuterLoop))
-                            config.Save(this);
                         ImGui.TextColored(KnownColor.Gray.ToVector4(),
                             $"BOCCHI 返回并使用魔寻宝后，仅在白银达到 {CofferHuntSilverCap} 或青铜达到 {CofferHuntBronzeCap}，且下个罐子 > 10 分钟时开启。\n" +
-                            "需启用 BOCCHI 自动魔寻宝，以及 DR「新月岛综合助手」模块；传送到非起始点魔路水晶后，仅在周围 50 yalms 无其他玩家时启动，发现玩家则换水晶重试。\n" +
+                            "需启用 BOCCHI 自动魔寻宝，以及 DR「新月岛综合助手」模块；DR 会依次完成内环和外环路线。传送到非起始点魔路水晶后，仅在周围 50 yalms 无其他玩家时启动，发现玩家则换水晶重试。\n" +
                             "进入 5 分钟自动前往窗口后回程并衔接挖罐；否则回程并恢复 BOCCHI 非法模式。");
                     }
                 }
@@ -1096,7 +1095,7 @@ internal sealed class OccultPotFeature : IDisposable
                 ManualStartCofferHunt();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("使用 DR 手动巡宝箱\n支持南征与北征；进入距刷罐 5 分钟窗口或寻宝完成时自动停止");
+            ImGui.SetTooltip("在当前位置直接启动 DR 内环；内环完成后自动换至非初始点水晶启动外环\n支持南征与北征；进入距刷罐 5 分钟窗口或两条路线完成时自动停止");
 
         ImGui.SameLine();
         using (ImRaii.Disabled(!autoDigActive && !cofferHuntActive))
@@ -3353,11 +3352,27 @@ internal sealed class OccultPotFeature : IDisposable
     private void ManualStartCofferHunt()
     {
         if (!InOccultMapZone || autoDigActive || cofferHuntActive || undergroundTestActive) return;
+        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return;
 
         autoDigTask ??= new();
         autoDigTask.Abort();
-        autoDigActive = true;
-        StartCofferHunt();
+        autoDigActive                 = true;
+        cofferHuntActive              = true;
+        cofferHuntTerritory           = GameState.TerritoryType;
+        drHuntStarted                 = true;
+        drOuterRouteActive            = false;
+        cofferHuntStartedAt           = Environment.TickCount64;
+        autoDigStatus                 = "DR 内环寻宝中";
+        pendingCofferHuntAutoDigFor    = -1;
+
+        EndBocchiReturnSuppression();
+        VnavStop();
+        var usedEmergencyStop = EmergencyStopBocchi();
+        SendDrCofferHuntStartCommand();
+        NotifyHelper.Instance().NotificationInfo("DR 内环寻宝已从当前位置启动");
+        DService.Instance().Log.Information(
+            $"[OccultPotNotifier] Manual DailyRoutines treasure hunt dispatched at {localPlayer.Position:F2}; " +
+            $"BOCCHI emergency stop direct={usedEmergencyStop}");
     }
 
     private void StopAutoDigManually()
@@ -3373,6 +3388,7 @@ internal sealed class OccultPotFeature : IDisposable
         cofferHuntActive    = true;
         cofferHuntTerritory = GameState.TerritoryType;
         drHuntStarted       = false;
+        drOuterRouteActive  = false;
         EndBocchiReturnSuppression();
         StartDrCofferHunt();
     }
@@ -3381,24 +3397,31 @@ internal sealed class OccultPotFeature : IDisposable
     {
         if (autoDigTask == null) return;
 
+        var routeName = drOuterRouteActive ? "外环" : "内环";
         var candidates = GetShuffledDrAetherytes(cofferHuntTerritory);
         if (candidates.Count == 0)
         {
             ClearCofferHuntState();
-            NotifyHelper.Instance().NotificationWarning("当前区域没有可用于 DR 寻宝的非初始点魔路水晶");
+            NotifyHelper.Instance().NotificationWarning($"当前区域没有可用于 DR {routeName}寻宝的非初始点魔路水晶");
             EnqueueReturnStandby();
             return;
         }
 
         var basePosition = GetCofferHuntBasePosition(cofferHuntTerritory);
-        autoDigStatus = "DR 寻宝准备：返回初始点";
-        autoDigTask.Enqueue(() => SendCommand("/bocchiillegal off"));
+        autoDigStatus = $"DR {routeName}准备：返回初始点";
+        autoDigTask.Enqueue(() =>
+        {
+            var usedEmergencyStop = EmergencyStopBocchi();
+            DService.Instance().Log.Information(
+                $"[OccultPotNotifier] DR treasure hunt preparation; BOCCHI emergency stop direct={usedEmergencyStop}");
+            return true;
+        });
         autoDigTask.Enqueue(() => { UseReturn(); return true; });
         autoDigTask.Enqueue(WaitDrReturnToBase(basePosition, 15000));
 
         autoDigTask.Enqueue(() =>
         {
-            autoDigStatus = "DR 寻宝准备：前往初始点水晶";
+            autoDigStatus = $"DR {routeName}准备：前往初始点水晶";
             VnavMoveTo(basePosition);
             return true;
         });
@@ -3415,7 +3438,7 @@ internal sealed class OccultPotFeature : IDisposable
 
             SendCommand("/pdr ptreasure abort");
             ClearCofferHuntState();
-            NotifyHelper.Instance().NotificationWarning("DR 寻宝未能启动：已尝试所有非初始点魔路水晶");
+            NotifyHelper.Instance().NotificationWarning($"DR {routeName}寻宝未能启动：已尝试所有非初始点魔路水晶");
             EnqueueReturnStandby();
             return true;
         });
@@ -3505,7 +3528,7 @@ internal sealed class OccultPotFeature : IDisposable
                 return true;
             }
 
-            autoDigStatus = $"DR 寻宝启动：{aetheryte.Name}";
+            autoDigStatus = $"DR {(drOuterRouteActive ? "外环" : "内环")}启动：{aetheryte.Name}";
             SendDrCofferHuntStartCommand();
             commandIssued = true;
             return true;
@@ -3522,14 +3545,14 @@ internal sealed class OccultPotFeature : IDisposable
 
     private void SendDrCofferHuntStartCommand()
     {
-        var routeAliases = config.CofferHuntOuterLoop
+        var routeAliases = drOuterRouteActive
                                ? DrOuterLoopRouteAliases
                                : DrInnerLoopRouteAliases;
         foreach (var routeAlias in routeAliases)
             SendCommand($"/pdr ptreasure {routeAlias}");
 
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] DailyRoutines treasure route dispatched: {(config.CofferHuntOuterLoop ? "outer" : "inner")}");
+            $"[OccultPotNotifier] DailyRoutines treasure route dispatched: {(drOuterRouteActive ? "outer" : "inner")}");
     }
 
     private Func<bool?> WaitArriveUnlessDrStarted(
@@ -3564,8 +3587,8 @@ internal sealed class OccultPotFeature : IDisposable
             {
                 drHuntStarted       = true;
                 cofferHuntStartedAt = now;
-                autoDigStatus       = "DR 寻宝中";
-                NotifyHelper.Instance().NotificationInfo("DR 寻宝已启动");
+                autoDigStatus       = $"DR {(drOuterRouteActive ? "外环" : "内环")}寻宝中";
+                NotifyHelper.Instance().NotificationInfo($"DR {(drOuterRouteActive ? "外环" : "内环")}寻宝已启动");
                 return true;
             }
 
@@ -3633,6 +3656,21 @@ internal sealed class OccultPotFeature : IDisposable
             Vector2.Distance(player.Position.ToVector2(), GetCofferHuntBasePosition(cofferHuntTerritory).ToVector2()) > 50f)
             return;
 
+        if (!drOuterRouteActive)
+        {
+            autoDigTask?.Abort();
+            VnavStop();
+            drHuntStarted       = false;
+            drOuterRouteActive  = true;
+            cofferHuntStartedAt = 0;
+            autoDigStatus       = "DR 内环完成，准备外环";
+            NotifyHelper.Instance().NotificationInfo("DR 内环已完成，正在准备外环寻宝");
+            DService.Instance().Log.Information(
+                "[OccultPotNotifier] DailyRoutines inner treasure route completed; preparing outer route");
+            StartDrCofferHunt();
+            return;
+        }
+
         var now       = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var remaining = nextSpawnTime - now;
         pendingCofferHuntAutoDigFor = displayPot != null && nextSpawnTime > 0 &&
@@ -3675,6 +3713,7 @@ internal sealed class OccultPotFeature : IDisposable
         cofferHuntActive    = false;
         cofferHuntTerritory = 0;
         drHuntStarted       = false;
+        drOuterRouteActive  = false;
     }
 
     private void EnqueueReturnStandby()
@@ -6347,7 +6386,6 @@ internal sealed class OccultPotFeature : IDisposable
 
         [JsonProperty("EnableBocchiHunt")]
         public bool      EnableCofferHunt;
-        public bool      CofferHuntOuterLoop = true;
 
         public bool      EnableAutoRevive;
         public bool      AutoRevivePartyOnly = true;
