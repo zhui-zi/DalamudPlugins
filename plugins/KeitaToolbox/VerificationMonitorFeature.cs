@@ -61,6 +61,13 @@ internal sealed class VerificationMonitorFeature : IDisposable
             "discord://-/channels/@me/1538405885032927263",
             "https://discord.com/channels/@me/1538405885032927263"),
         new(
+            "Kodakku Assist",
+            "KodakkuAssist",
+            ReaderKind.NekoVerifier,
+            "Kodakku_Bot",
+            "discord://-/users/1294534980499804202",
+            "https://discord.com/users/1294534980499804202"),
+        new(
             "OmniToolbox",
             "OmniToolbox",
             ReaderKind.OmniToolbox,
@@ -142,7 +149,7 @@ internal sealed class VerificationMonitorFeature : IDisposable
         if (ImGui.Button("立即刷新"))
             Refresh();
         ImGui.SameLine();
-        if (ImGui.Button("打开认证 Discord"))
+        if (ImGui.Button("打开验证入口"))
             OpenDiscordWindow();
         if (lastRefreshAt != DateTimeOffset.MinValue)
         {
@@ -151,7 +158,7 @@ internal sealed class VerificationMonitorFeature : IDisposable
         }
 
         ImGui.Separator();
-        foreach (var state in states)
+        foreach (var state in states.Where(state => IsTargetInstalled(state.Target)))
             DrawState(state);
     }
 
@@ -170,7 +177,7 @@ internal sealed class VerificationMonitorFeature : IDisposable
             new System.Numerics.Vector2(560f, 0f),
             ImGuiCond.Appearing);
         if (!ImGui.Begin(
-                "插件验证 Discord##KeitaToolboxVerificationDiscord",
+                "插件验证入口##KeitaToolboxVerificationDiscord",
                 ref discordWindowOpen,
                 ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoCollapse))
         {
@@ -178,12 +185,17 @@ internal sealed class VerificationMonitorFeature : IDisposable
             return;
         }
 
-        ImGui.TextWrapped("点击对应按钮会优先唤起 Discord 客户端；客户端不可用时改用浏览器打开。");
+        ImGui.TextWrapped(
+            "第一列打开插件设置；右侧 Discord 按钮会优先唤起客户端，客户端不可用时改用浏览器打开。");
         ImGui.Separator();
 
-        var orderedTargets = states.Count == Targets.Length
-            ? states.Select(state => state.Target)
-            : Targets;
+        var installedTargets = Targets
+            .Where(IsTargetInstalled)
+            .ToArray();
+        var orderedTargets = states
+            .Where(state => installedTargets.Contains(state.Target))
+            .Select(state => state.Target)
+            .Concat(installedTargets.Where(target => states.All(state => state.Target != target)));
         foreach (var target in orderedTargets)
         {
             ImGui.PushID(target.InternalName);
@@ -201,8 +213,17 @@ internal sealed class VerificationMonitorFeature : IDisposable
                 ImGui.EndDisabled();
 
             ImGui.SameLine(350f);
-            if (ImGui.Button($"打开 {target.DiscordName}"))
-                OpenDiscordTarget(target);
+            if (target.DiscordName != null &&
+                target.DiscordUri != null &&
+                target.WebUrl != null)
+            {
+                if (ImGui.Button($"打开 {target.DiscordName}"))
+                    OpenDiscordTarget(target, target.DiscordUri, target.WebUrl);
+            }
+            else
+            {
+                ImGui.TextDisabled("请在插件设置内验证");
+            }
 
             var state = states.FirstOrDefault(current => current.Target == target);
             if (state == null)
@@ -220,7 +241,6 @@ internal sealed class VerificationMonitorFeature : IDisposable
             ImGui.PopID();
         }
 
-        ImGui.TextDisabled("ErrerBot 与 Omni Bot 会在各插件对应的认证频道中使用。");
         ImGui.End();
     }
 
@@ -242,11 +262,14 @@ internal sealed class VerificationMonitorFeature : IDisposable
         }
     }
 
-    private static void OpenDiscordTarget(VerificationTarget target)
+    private static void OpenDiscordTarget(
+        VerificationTarget target,
+        string discordUri,
+        string webUrl)
     {
         try
         {
-            Process.Start(new ProcessStartInfo(target.DiscordUri)
+            Process.Start(new ProcessStartInfo(discordUri)
             {
                 UseShellExecute = true,
                 Verb = "open",
@@ -258,7 +281,7 @@ internal sealed class VerificationMonitorFeature : IDisposable
                 ex,
                 "Failed to open Discord client for {Plugin}; using the web link.",
                 target.InternalName);
-            Util.OpenLink(target.WebUrl);
+            Util.OpenLink(webUrl);
         }
     }
 
@@ -315,6 +338,7 @@ internal sealed class VerificationMonitorFeature : IDisposable
         }
 
         var refreshedStates = Targets
+            .Where(IsTargetInstalled)
             .Select(ReadTarget)
             .ToArray();
         CacheKnownExpiries(refreshedStates);
@@ -651,18 +675,21 @@ internal sealed class VerificationMonitorFeature : IDisposable
 
     private void UpdateEntry(DateTimeOffset now)
     {
+        var visibleStates = states
+            .Where(state => IsTargetInstalled(state.Target))
+            .ToArray();
         ApplyEntryVisibility();
         if (!entry.Shown)
             return;
 
-        var hasExpired = states.Any(state =>
+        var hasExpired = visibleStates.Any(state =>
             (state.Status is VerificationStatus.Known or VerificationStatus.Cached) &&
             state.ExpiresAt <= now);
-        var hasWarning = states.Any(state =>
+        var hasWarning = visibleStates.Any(state =>
             (state.Status is VerificationStatus.Known or VerificationStatus.Cached) &&
             state.ExpiresAt > now &&
             state.ExpiresAt - now <= WarningThreshold);
-        var allHealthy = states.Count == Targets.Length && states.All(state =>
+        var allHealthy = visibleStates.Length > 0 && visibleStates.All(state =>
             state.Status is VerificationStatus.ValidWithoutExpiry or
                 VerificationStatus.Indefinite ||
             (state.Status is VerificationStatus.Known or VerificationStatus.Cached) &&
@@ -684,14 +711,22 @@ internal sealed class VerificationMonitorFeature : IDisposable
             {
                 "插件验证剩余时间",
             }.Concat(
-                states.Select(state => $"{state.Target.DisplayName}: {FormatState(state, false)}")));
+                visibleStates.Select(state => $"{state.Target.DisplayName}: {FormatState(state, false)}")));
     }
 
     private void ApplyEntryVisibility()
     {
         var settings = Plugin.Config.VerificationMonitor;
-        entry.Shown = settings.Enabled && settings.ShowServerInfoBar;
+        entry.Shown = settings.Enabled &&
+                      settings.ShowServerInfoBar &&
+                      states.Any(state => IsTargetInstalled(state.Target));
     }
+
+    private static bool IsTargetInstalled(VerificationTarget target) =>
+        Plugin.PluginInterface.InstalledPlugins.Any(plugin =>
+            plugin.InternalName.Equals(
+                target.InternalName,
+                StringComparison.OrdinalIgnoreCase));
 
     private void SendDueReminder(DateTimeOffset now)
     {
@@ -707,6 +742,7 @@ internal sealed class VerificationMonitorFeature : IDisposable
         }
 
         var due = states
+            .Where(state => IsTargetInstalled(state.Target))
             .Where(state =>
                 (state.Status is VerificationStatus.Known or VerificationStatus.Cached) &&
                 state.ExpiresAt != null &&
@@ -1005,9 +1041,9 @@ internal sealed class VerificationMonitorFeature : IDisposable
         string DisplayName,
         string InternalName,
         ReaderKind Reader,
-        string DiscordName,
-        string DiscordUri,
-        string WebUrl);
+        string? DiscordName,
+        string? DiscordUri,
+        string? WebUrl);
 
     private sealed record VerificationState(
         VerificationTarget Target,

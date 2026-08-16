@@ -27,6 +27,8 @@ public sealed class Plugin : IDalamudPlugin
         "https://dalamudunlock.ff14.cafe/toolbox/unlock";
     private const string UsageEndpoint =
         "https://pluginping.keita.cc/v1/heartbeat";
+    // Keep the password workflow available for future reactivation.
+    private static bool PasswordProtectionEnabled => false;
 
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
@@ -50,7 +52,8 @@ public sealed class Plugin : IDalamudPlugin
 
     internal static Configuration Config { get; private set; } = null!;
     internal static DeferredScheduler Scheduler { get; } = new();
-    internal static bool ProtectedFeaturesUnlocked => Config.ProtectedFeaturesUnlocked;
+    internal static bool ProtectedFeaturesUnlocked =>
+        !PasswordProtectionEnabled || Config.ProtectedFeaturesUnlocked;
 
     private readonly BasicFeatures? basicFeatures;
     private readonly AutoInviteFeature? autoInviteFeature;
@@ -350,7 +353,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawProtectedFeatureSettings()
     {
-        if (!ProtectedFeaturesUnlocked)
+        if (PasswordProtectionEnabled && !Config.ProtectedFeaturesUnlocked)
         {
             if (!ImGui.CollapsingHeader("受保护的高级工具"))
                 return;
