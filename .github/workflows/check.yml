@@ -1,0 +1,49 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: tests/KeitaToolbox.CoreChecks/packages.lock.json
+      - run: dotnet test --project tests/KeitaToolbox.CoreChecks/KeitaToolbox.CoreChecks.csproj --configuration Release --minimum-expected-tests 6
+      - shell: pwsh
+        run: |
+          $limits = @{
+            "plugins/KeitaToolbox/Plugin.Settings.cs" = 400
+            "plugins/KeitaToolbox/OccultPotFeature.cs" = 5000
+            "plugins/KeitaToolbox/OccultPotFeature.AutoDig.cs" = 3500
+            "plugins/KeitaToolbox/OccultPotFeature.CofferHunt.cs" = 1000
+          }
+          foreach ($entry in $limits.GetEnumerator()) {
+            $lineCount = (Get-Content $entry.Key).Count
+            if ($lineCount -gt $entry.Value) {
+              throw "$($entry.Key) exceeded its $($entry.Value)-line architecture limit."
+            }
+          }
+
+  unlock-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/dalamud-unlock
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: workers/dalamud-unlock/package-lock.json
+      - run: npm ci
+      - run: npm run check

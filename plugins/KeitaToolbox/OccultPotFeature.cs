@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Net.Http;
 using System.Numerics;
 using System.Reflection;
@@ -55,10 +56,11 @@ using EventHandlerContent = FFXIVClientStructs.FFXIV.Client.Game.Event.EventHand
 
 namespace KeitaToolbox;
 
-internal sealed class OccultPotFeature : IDisposable
+internal sealed partial class OccultPotFeature : IDisposable
 {
     private const long Respawn = 1800;
     private const float AethernetInteractionDistance = 3.8f;
+    private const int AethernetTeleportStartTimeoutMS = 5_000;
 
     private Config        config = null!;
     private IDtrBarEntry? entry;
@@ -122,18 +124,15 @@ internal sealed class OccultPotFeature : IDisposable
     private Pot?       pendingPostFateAutoDigTarget;
     private long       pendingPostFateAutoDigUntil;
     private long       autoDigStartedFor = -1;
+    private long       autoDigRetryFor = -1;
+    private int        autoDigRetryCount;
+    private long       autoDigRetryAt;
     private Pot?       autoDigTarget;
     private string     autoDigStatus = string.Empty;
     private bool       emergencyReturnTriggered;
     private bool       emergencyReturnRecovering;
     private long       emergencyReturnRecoverAt;
     private bool       battleContentSettling;
-    private bool       postBattleContentObserved;
-    private bool       postBattleTreasureCheckPending;
-    private DateTime   postBattleCompletedAt = DateTime.MinValue;
-    private long       postBattleCheckExpireAt;
-    private DateTime   lastTreasuresightCastAt = DateTime.MinValue;
-    private bool       treasuresightCastObserved;
     private long       declineInviteAt;
     private uint       declineInviteTime;
     private string     declineInviterName = string.Empty;
@@ -147,6 +146,13 @@ internal sealed class OccultPotFeature : IDisposable
     private bool       bmrAiSuppressionActive;
     private bool       bmrAiWasEnabled;
     private long       bmrAiSuppressionReleaseAt;
+    private CrescentSupportJob? potFatePreviousSupportJob;
+    private bool       potFateSupportJobSwitchActive;
+    private bool       potFateNinjaConfirmed;
+    private bool       potFateSupportJobRestoring;
+    private bool       potFateSupportJobRecoveryPending;
+    private bool       potFateSupportJobSwitchSuppressed;
+    private readonly BoundedRetryGate potFateSupportJobRetry = new(8, 750, 10_000);
     private Hook<BmrWalkInputDelegate>? bmrWalkInputHook;
     private Vector3?    potFateMovementDirection;
     private FieldInfo?  bmrMovementInstanceField;
@@ -170,16 +176,22 @@ internal sealed class OccultPotFeature : IDisposable
     private uint       cofferHuntTerritory;
     private bool       drHuntStarted;
     private bool       drOuterRouteActive;
+    private bool       cofferHuntScanPending;
+    private int        cofferHuntScanBronze;
+    private int        cofferHuntScanSilver;
+    private long       cofferHuntScanExpireAt;
     private long       pendingCofferHuntAutoDigFor = -1;
     private const long CofferHuntRequiredLeadSeconds = 600;
     private const long CofferHuntStopLeadSeconds     = 300;
     private const int  CofferHuntSilverCap           = 8;
     private const int  CofferHuntBronzeCap           = 30;
-    private const long PostBattleCheckTimeoutMS      = 180_000;
+    private const long CofferHuntScanTimeoutMS       = 180_000;
+    private const float CofferHuntPlayerAvoidanceRadius = 40f;
+    private const uint CofferHuntNorthInitialPreferredAetheryteDataID = 5576;
+    private const float CofferHuntStartMinimumDistance = 10f;
+    private const long CofferHuntStartHoldMS = 750;
     private const long BmrAiSuppressionReleaseGraceMS = 500;
     private const string BmrWalkInputSignature = "E8 ?? ?? ?? ?? 80 7B 3E 00 48 8D 3D";
-    private const uint TreasuresightActionID         = 0xA2B3;
-    private const uint TreasuresightGeneralActionID  = 32;
 
     private volatile bool crossDCQuerying;
     private ushort        crossDCTargetDC;
@@ -208,6 +220,9 @@ internal sealed class OccultPotFeature : IDisposable
         [SilverCurrencyExchange, GoldCurrencyExchange];
 
     private static readonly string[] DigDirections = ["西北", "西南", "东北", "东南", "正东", "正西", "正南", "正北"];
+    private static readonly Regex CofferCountRegex = new(
+        @"感知到了\s*(\d+)\s*个银宝箱、\s*(\d+)\s*个铜宝箱",
+        RegexOptions.Compiled);
 
     private unsafe delegate void ShowBattleTalkDelegate(UIModule* module, CStringPointer name, CStringPointer text, float duration, byte style);
     private Hook<ShowBattleTalkDelegate>? showBattleTalkHook;
@@ -289,7 +304,7 @@ internal sealed class OccultPotFeature : IDisposable
     private readonly object syncLock = new();
     private (uint Territory, long NorthSpawn, long NorthSeen, long SouthSpawn, long SouthSeen)? pendingSync;
 
-    #region 地图标记 - 常量
+    #region Map marker constants
 
     private const uint OccultTerritory      = 1252;
     private const uint OccultNorthTerritory = 1346;
@@ -329,13 +344,16 @@ internal sealed class OccultPotFeature : IDisposable
     private const int   UndergroundPositionUpdateMaxElapsedMS = 250;
     private const int   UndergroundSettleMS = 750;
     private const int   MountTimeoutMS      = 20_000;
+    private const int   MountBlockedTimeoutMS = 30_000;
+    private const int   AutoDigTravelRetryDelayMS = 5_000;
+    private const int   AutoDigTravelRetryLimit = 1;
     private const float UndergroundTestMoveDistance  = 12f;
     private const float UndergroundTestMoveTolerance = 1.5f;
     private const int   UndergroundTestEndpointPauseMS = 1_000;
     private const int   UndergroundTestStopTimeoutMS = 10_000;
     private const string UndergroundTestCommand = "occultundergroundtest";
-    private static readonly string[] DrInnerLoopRouteAliases = ["内环", "Inner Loop", "内回り", "내부"];
-    private static readonly string[] DrOuterLoopRouteAliases = ["外环", "Outer Loop", "外回り", "외부"];
+    private static readonly string[] DrInnerLoopRouteAliases = ["内环", "InnerLoop", "Inner Loop", "内回り", "내부"];
+    private static readonly string[] DrOuterLoopRouteAliases = ["外环", "OuterLoop", "Outer Loop", "外回り", "외부"];
     private const uint LureStatusID = 1531;
 
     private const uint IconGoldChest = 60354;
@@ -372,7 +390,7 @@ internal sealed class OccultPotFeature : IDisposable
 
     #endregion
 
-    #region 地图标记 - 状态
+    #region Map marker state
 
     private MarkerSet  currentMarkers = MarkerSet.None;
     private bool       autoSwitchEngaged;
@@ -480,12 +498,14 @@ internal sealed class OccultPotFeature : IDisposable
 
         DService.Instance().ClientState.TerritoryChanged += OnZoneChanged;
         OnZoneChanged(0);
+        ResumePendingSupportJobRestore();
     }
 
     public void Dispose()
     {
         StopPotFateApproach();
         RestoreBmrAiAfterPotFate();
+        RestoreSupportJobAfterPotFate();
         DService.Instance().ClientState.TerritoryChanged -= OnZoneChanged;
         DService.Instance().Chat.ChatMessage             -= OnChatMessage;
         GamePacketManager.Instance().Unreg(OnPreSendPacket);
@@ -553,7 +573,7 @@ internal sealed class OccultPotFeature : IDisposable
 
     private unsafe void TryCaptureDigTalk(int messageIndex)
     {
-        if (!config.EnableAutoDig || !InOccultMapZone) return;
+        if ((!config.EnableAutoDig && !config.EnableCofferHunt) || !InOccultMapZone) return;
 
         if (!RaptureLogModule.Instance()->GetLogMessageDetail(messageIndex, out _, out var rawMessage, out _, out _, out _, out _))
             return;
@@ -821,7 +841,11 @@ internal sealed class OccultPotFeature : IDisposable
             if (ImGui.Checkbox("启用全自动挖罐", ref config.EnableAutoDig))
             {
                 config.Save(this);
-                if (!config.EnableAutoDig) AbortAutoDig();
+                if (!config.EnableAutoDig)
+                {
+                    AbortAutoDig();
+                    ResetAutoDigTravelRetry();
+                }
             }
 
             if (config.EnableAutoDig)
@@ -860,6 +884,9 @@ internal sealed class OccultPotFeature : IDisposable
                 else if (DangerZoneHandling == DangerZoneHandlingMode.Skip)
                     ImGui.TextColored(KnownColor.Gray.ToVector4(),
                         "遇到危险区时自动取消身上的撒娇罐 Buff，并结束本轮挖罐。");
+                else if (DangerZoneHandling == DangerZoneHandlingMode.Ground)
+                    ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                        "北征寻宝移动会动态绕开同级或更高探索等级普通怪的仇恨圈。");
                 using (ImRaii.Disabled(DangerZoneHandling != DangerZoneHandlingMode.Manual))
                 {
                     if (ImGui.Checkbox("遇到危险区宝箱时使用 EdgeTTS 提示手动处理", ref config.AutoDigDangerTts))
@@ -902,8 +929,9 @@ internal sealed class OccultPotFeature : IDisposable
                     using (ImRaii.PushIndent())
                     {
                         ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                            $"BOCCHI 返回并使用魔寻宝后，仅在白银达到 {CofferHuntSilverCap} 或青铜达到 {CofferHuntBronzeCap}，且下个罐子 > 10 分钟时开启。\n" +
-                            "需启用 BOCCHI 自动魔寻宝，以及 DR「新月岛综合助手」模块；DR 会依次完成内环和外环路线。传送到非起始点魔路水晶后，仅在周围 50 yalms 无其他玩家时启动，发现玩家则换水晶重试。\n" +
+                            $"BOCCHI 自动使用魔寻宝后，仅在白银达到 {CofferHuntSilverCap} 或青铜达到 {CofferHuntBronzeCap}，且下个罐子 > 10 分钟时开启。\n" +
+                            $"需启用 BOCCHI 自动魔寻宝，以及 DR「新月岛综合助手」模块；DR 每次随机选择内环或外环，仅运行其中一条。传送到非起始点魔路水晶后，仅在周围 {CofferHuntPlayerAvoidanceRadius:0} yalms 无其他玩家时启动，发现玩家则换水晶重试。\n" +
+                            "成功启动后会优先复用该水晶；若水晶周围有人或传送失败，再尝试其他水晶。\n" +
                             "进入 5 分钟自动前往窗口后回程并衔接挖罐；否则回程并恢复 BOCCHI 非法模式。");
                     }
                 }
@@ -925,6 +953,20 @@ internal sealed class OccultPotFeature : IDisposable
         {
             if (ImGui.Checkbox("位于魔法罐 FATE 区域时持续选中敌人", ref config.KeepPotFateEnemyTargeted))
                 config.Save(this);
+        }
+
+        ConfigSection("魔法罐 FATE 辅助职业");
+        using (ImRaii.PushIndent())
+        {
+            if (ImGui.Checkbox("魔法罐 FATE 开始前 1 秒自动切为辅助忍者", ref config.AutoSwitchToNinjaDuringPotFate))
+            {
+                config.Save(this);
+                if (!config.AutoSwitchToNinjaDuringPotFate)
+                    RestoreSupportJobAfterPotFate();
+            }
+
+            ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                "依据当前岛的魔法罐倒计提前切换；FATE 结束或离开后恢复原辅助职业。");
         }
 
         ConfigSection("BMR AI");
@@ -1104,6 +1146,8 @@ internal sealed class OccultPotFeature : IDisposable
                              ? "塔内暂停"
                              : autoDigActive
                              ? string.IsNullOrEmpty(autoDigStatus) ? "运行中" : autoDigStatus
+                             : autoDigRetryFor == nextSpawnTime && Environment.TickCount64 < autoDigRetryAt
+                             ? "准备重试"
                              : "待命";
             ImGui.TextColored(KnownColor.Gray.ToVector4(), $"自动挖罐: {status}");
         }
@@ -1116,7 +1160,7 @@ internal sealed class OccultPotFeature : IDisposable
                 ManualStartCofferHunt();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("在当前位置直接启动 DR 内环；内环完成后自动换至非初始点水晶启动外环\n支持南征与北征；进入距刷罐 5 分钟窗口或两条路线完成时自动停止");
+            ImGui.SetTooltip("在当前位置随机启动 DR 内环或外环，每次仅运行其中一条\n支持南征与北征；进入距刷罐 5 分钟窗口或所选路线完成时自动停止");
 
         ImGui.SameLine();
         using (ImRaii.Disabled(!autoDigActive && !cofferHuntActive))
@@ -1148,6 +1192,8 @@ internal sealed class OccultPotFeature : IDisposable
     {
         StopPotFateApproach();
         RestoreBmrAiAfterPotFate();
+        RestoreSupportJobAfterPotFate();
+        potFateSupportJobSwitchSuppressed = false;
         StopUndergroundTest(false);
         FrameworkManager.Instance().Unreg(OnUpdate);
         FrameworkManager.Instance().Unreg(OnPotFateTarget);
@@ -1167,8 +1213,7 @@ internal sealed class OccultPotFeature : IDisposable
         autoDigBocchiTravelStopRetryAt = 0;
         pendingPostFateAutoDigTarget = null;
         pendingPostFateAutoDigUntil = 0;
-        lastTreasuresightCastAt = DateTime.MinValue;
-        treasuresightCastObserved = false;
+        ClearPendingCofferHuntScan();
 
         if (!crossingDC)
             AbortAutoDig();
@@ -1215,13 +1260,11 @@ internal sealed class OccultPotFeature : IDisposable
     {
         MaintainPotFateTarget();
         MaintainBmrAiSuppression();
+        MaintainPotFateSupportJob();
     }
 
     private void OnAutoDigSafety(IFramework _)
     {
-        if (config.EnableCofferHunt && InOccultMapZone)
-            ObserveTreasuresightCast();
-
         RestoreBocchiAfterEmergencyReturn();
 
         if (ShouldEmergencyReturn(DService.Instance().ObjectTable.LocalPlayer))
@@ -1231,6 +1274,8 @@ internal sealed class OccultPotFeature : IDisposable
             TriggerEmergencyReturn();
             return;
         }
+
+        UpdateNorthHornAggroAvoidance();
 
         if (!config.EnableAutoDig || !autoDigActive || autoDigTarget is not { } fate) return;
 
@@ -1256,9 +1301,9 @@ internal sealed class OccultPotFeature : IDisposable
 
         suppressBocchiReturn = true;
         nextBocchiSuppressAt = Environment.TickCount64 + 1000;
-        var usedEmergencyStop = EmergencyStopBocchi();
+        var bocchiStopMode = EmergencyStopBocchi();
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Magic Pot FATE cleanup; BOCCHI emergency stop direct={usedEmergencyStop}");
+            $"[OccultPotNotifier] Magic Pot FATE cleanup; BOCCHI stop={bocchiStopMode}");
     }
 
     private void KeepBocchiReturnSuppressed()
@@ -1483,7 +1528,11 @@ internal sealed class OccultPotFeature : IDisposable
         return inventory == null ? 0 : inventory->GetInventoryItemCount(itemID);
     }
 
-    private static bool CanExchangeCurrenciesNow(out string reason)
+    private bool CurrencyExchangeBlockedByAutomation =>
+        autoDigActive || cofferHuntActive || undergroundTestActive || standbyDeathReturning ||
+        crossingDC || undergroundDangerActive;
+
+    private bool CanExchangeCurrenciesNow(out string reason)
     {
         if (GameState.TerritoryType != OccultNorthTerritory)
         {
@@ -1494,6 +1543,12 @@ internal sealed class OccultPotFeature : IDisposable
         if (InForkedTower)
         {
             reason = "歧路之塔内暂停兑换。";
+            return false;
+        }
+
+        if (CurrencyExchangeBlockedByAutomation)
+        {
+            reason = "魔法罐自动化期间暂停兑换。";
             return false;
         }
 
@@ -1648,6 +1703,12 @@ internal sealed class OccultPotFeature : IDisposable
             return;
 
         var now = Environment.TickCount64;
+        if (CurrencyExchangeBlockedByAutomation)
+        {
+            PauseCurrencyExchangeForAutomation();
+            return;
+        }
+
         if (pendingCurrencyExchange is { } pending)
         {
             SuppressCurrencyExchangeWindow();
@@ -1768,6 +1829,25 @@ internal sealed class OccultPotFeature : IDisposable
 
             return;
         }
+    }
+
+    private void PauseCurrencyExchangeForAutomation()
+    {
+        if (pendingCurrencyExchange is not { } pending)
+            return;
+
+        CompleteCurrencyExchangeSession(pending.Spec.EventID);
+        CloseCurrencyExchangeWindow();
+        pendingCurrencyExchange = null;
+        pendingCurrencyBeforeCount = 0;
+        pendingFixativeBeforeCount = 0;
+        pendingCurrencyActionAt = 0;
+        pendingCurrencyDeadline = 0;
+        pendingCurrencyConfirmationClicked = false;
+        nextCurrencyExchangeAt = 0;
+        currencyExchangeStatus = "魔法罐自动化期间已暂停兑换。";
+        Plugin.Log.Information(
+            $"[OccultPotNotifier] Paused remote currency exchange during Magic Pot automation item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
     }
 
     private void FailCurrencyExchange(
@@ -1902,7 +1982,7 @@ internal sealed class OccultPotFeature : IDisposable
 
         if (undergroundTestActive) return;
 
-        DrivePostBattleCofferHunt(now);
+        DriveCofferHuntFromTreasureScan(now);
         MaybeStopCofferHunt(now);
         MaybeCofferHuntDone();
         CheckStandbyDeath();
@@ -2439,6 +2519,243 @@ internal sealed class OccultPotFeature : IDisposable
             "[OccultPotNotifier] Bossmod Reborn AI restored after Magic Pot FATE");
     }
 
+    private unsafe void MaintainPotFateSupportJob()
+    {
+        var participating = IsParticipatingInPotFate();
+        var potFateActive = pots.Any(pot =>
+            pot.TerritoryID == GameState.TerritoryType && pot.Alive);
+        var shouldUseNinja = PotFateSupportJobPolicy.ShouldUseNinja(
+            DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            nextSpawnTime,
+            potFateActive,
+            participating,
+            potFateSupportJobSwitchActive);
+        if (!config.AutoSwitchToNinjaDuringPotFate || !shouldUseNinja)
+        {
+            RestoreSupportJobAfterPotFate();
+            if (!potFateActive && !participating)
+                potFateSupportJobSwitchSuppressed = false;
+            return;
+        }
+
+        if (potFateSupportJobSwitchSuppressed)
+            return;
+
+        var localPlayer = DService.Instance().ObjectTable.LocalPlayer;
+        if (localPlayer is not { IsDead: false } ||
+            DService.Instance().Condition[ConditionFlag.BetweenAreas] ||
+            DService.Instance().Condition[ConditionFlag.BetweenAreas51])
+            return;
+
+        var currentJob = CrescentSupportJob.GetCurrentSupportJob();
+        if (!ResolvePendingSupportJobRecovery(currentJob))
+            return;
+
+        if (!potFateSupportJobSwitchActive)
+        {
+            if (currentJob is null) return;
+
+            potFatePreviousSupportJob = currentJob;
+            potFateSupportJobSwitchActive = true;
+            potFateNinjaConfirmed = currentJob.JobType == CrescentSupportJobType.Ninja;
+            potFateSupportJobRestoring = false;
+            RememberPendingSupportJobRestore(currentJob);
+            if (!potFateNinjaConfirmed)
+                potFateSupportJobRetry.Start(Environment.TickCount64);
+            DService.Instance().Log.Information(
+                $"[OccultPotNotifier] Magic Pot support job switch armed; previous={currentJob.JobType}");
+        }
+
+        if (currentJob?.JobType == CrescentSupportJobType.Ninja)
+        {
+            if (!potFateNinjaConfirmed)
+            {
+                potFateNinjaConfirmed = true;
+                DService.Instance().Log.Information(
+                    "[OccultPotNotifier] Phantom Ninja confirmed for Magic Pot FATE");
+            }
+
+            potFateSupportJobRetry.Clear();
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (potFateSupportJobRetry.IsExpired(now))
+        {
+            DService.Instance().Log.Warning(
+                "[OccultPotNotifier] Phantom Ninja switch timed out; suppressing retries until the next Magic Pot FATE");
+            potFateSupportJobRetry.Clear();
+            potFateSupportJobSwitchSuppressed = true;
+            return;
+        }
+
+        if (potFateSupportJobRetry.TryTake(now))
+            CrescentSupportJob.Ninja.ChangeTo();
+    }
+
+    private unsafe bool IsParticipatingInPotFate()
+    {
+        var localPlayer = DService.Instance().ObjectTable.LocalPlayer;
+        var gameObject = localPlayer == null ? null : (GameObject*)localPlayer.Address;
+        return gameObject != null && GetPot(gameObject->FateId) != null;
+    }
+
+    private void RestoreSupportJobAfterPotFate()
+    {
+        if (!potFateSupportJobSwitchActive) return;
+
+        var previousJob = potFatePreviousSupportJob;
+        if (previousJob is null)
+        {
+            ClearPotFateSupportJobSwitch();
+            return;
+        }
+
+        if (!InOccultMapZone)
+        {
+            DService.Instance().Log.Information(
+                "[OccultPotNotifier] Cleared pending support job restoration after leaving Occult Crescent");
+            ClearPotFateSupportJobSwitch();
+            return;
+        }
+
+        if (DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false } ||
+            DService.Instance().Condition[ConditionFlag.BetweenAreas] ||
+            DService.Instance().Condition[ConditionFlag.BetweenAreas51])
+            return;
+
+        var currentJob = CrescentSupportJob.GetCurrentSupportJob();
+        if (!ResolvePendingSupportJobRecovery(currentJob))
+            return;
+
+        if (!potFateNinjaConfirmed)
+        {
+            if (currentJob?.JobType != CrescentSupportJobType.Ninja)
+            {
+                DService.Instance().Log.Information(
+                    "[OccultPotNotifier] Skipped support job restoration because the Ninja switch was never confirmed");
+                ClearPotFateSupportJobSwitch();
+                return;
+            }
+
+            potFateNinjaConfirmed = true;
+        }
+
+        if (currentJob is not null &&
+            currentJob.JobType != CrescentSupportJobType.Ninja &&
+            currentJob.JobType != previousJob.JobType)
+        {
+            DService.Instance().Log.Information(
+                $"[OccultPotNotifier] Skipped support job restoration after a manual change; current={currentJob.JobType}");
+            ClearPotFateSupportJobSwitch();
+            return;
+        }
+
+        if (currentJob?.JobType == previousJob.JobType)
+        {
+            DService.Instance().Log.Information(
+                $"[OccultPotNotifier] Support job restored after Magic Pot FATE; job={previousJob.JobType}");
+            ClearPotFateSupportJobSwitch();
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (!potFateSupportJobRestoring)
+        {
+            potFateSupportJobRestoring = true;
+            potFateSupportJobRetry.Start(now);
+        }
+
+        if (potFateSupportJobRetry.IsExpired(now))
+        {
+            DService.Instance().Log.Warning(
+                $"[OccultPotNotifier] Support job restoration timed out; previous={previousJob.JobType}");
+            ClearPotFateSupportJobSwitch();
+            return;
+        }
+
+        if (potFateSupportJobRetry.TryTake(now))
+            previousJob.ChangeTo();
+    }
+
+    private void ResumePendingSupportJobRestore()
+    {
+        if (config.PendingSupportJobRestore < 0)
+            return;
+
+        if (!InOccultMapZone)
+        {
+            ClearPendingSupportJobRestore();
+            return;
+        }
+
+        var previousJob = CrescentSupportJob.AllJobs.FirstOrDefault(
+            job => (int)job.JobType == config.PendingSupportJobRestore);
+        if (previousJob is null)
+        {
+            ClearPendingSupportJobRestore();
+            return;
+        }
+
+        potFatePreviousSupportJob = previousJob;
+        potFateSupportJobSwitchActive = true;
+        potFateSupportJobRecoveryPending = true;
+        potFateSupportJobRestoring = false;
+        potFateSupportJobRetry.Clear();
+        DService.Instance().Log.Information(
+            $"[OccultPotNotifier] Resumed pending support job restoration; previous={previousJob.JobType}");
+    }
+
+    private bool ResolvePendingSupportJobRecovery(CrescentSupportJob? currentJob)
+    {
+        if (!potFateSupportJobRecoveryPending)
+            return true;
+        if (currentJob is null)
+            return false;
+
+        potFateSupportJobRecoveryPending = false;
+        if (currentJob.JobType == CrescentSupportJobType.Ninja)
+        {
+            potFateNinjaConfirmed = true;
+            return true;
+        }
+
+        DService.Instance().Log.Information(
+            $"[OccultPotNotifier] Cleared pending support job restoration because Ninja is no longer active; current={currentJob.JobType}");
+        ClearPotFateSupportJobSwitch();
+        return false;
+    }
+
+    private void RememberPendingSupportJobRestore(CrescentSupportJob previousJob)
+    {
+        var jobType = (int)previousJob.JobType;
+        if (config.PendingSupportJobRestore == jobType)
+            return;
+
+        config.PendingSupportJobRestore = jobType;
+        config.Save(this);
+    }
+
+    private void ClearPendingSupportJobRestore()
+    {
+        if (config.PendingSupportJobRestore < 0)
+            return;
+
+        config.PendingSupportJobRestore = -1;
+        config.Save(this);
+    }
+
+    private void ClearPotFateSupportJobSwitch()
+    {
+        potFatePreviousSupportJob = null;
+        potFateSupportJobSwitchActive = false;
+        potFateNinjaConfirmed = false;
+        potFateSupportJobRestoring = false;
+        potFateSupportJobRecoveryPending = false;
+        potFateSupportJobRetry.Clear();
+        ClearPendingSupportJobRestore();
+    }
+
     private static unsafe bool IsValidPotFateEnemy(OmenBattleChara enemy, ushort activePotFateID)
     {
         if (enemy.Address == 0 ||
@@ -2472,7 +2789,7 @@ internal sealed class OccultPotFeature : IDisposable
         return north != null && south != null;
     }
 
-    #region 地图标记 - 逻辑
+    #region Map marker logic
 
     private void OnAreaMapRefresh(AddonEvent type, AddonArgs args) => markersDirty = true;
 
@@ -2521,6 +2838,12 @@ internal sealed class OccultPotFeature : IDisposable
     {
         if (string.IsNullOrEmpty(line) || !InOccultMapZone) return;
 
+        var cofferMatch = CofferCountRegex.Match(line);
+        if (cofferMatch.Success &&
+            int.TryParse(cofferMatch.Groups[1].Value, out var silverChests) &&
+            int.TryParse(cofferMatch.Groups[2].Value, out var bronzeChests))
+            CaptureCofferHuntScan(bronzeChests, silverChests);
+
         if (autoDigActive && awaitingDirection && line.Contains("财宝") && line.Contains("方向"))
         {
             foreach (var dir in DigDirections)
@@ -2553,3256 +2876,6 @@ internal sealed class OccultPotFeature : IDisposable
         }
     }
 
-    #region 自动挖罐
-
-
-
-    private void HandlePotFateEnded(Pot target)
-    {
-        if (!config.EnableAutoDig || InForkedTower) return;
-
-        if (autoDigActive)
-        {
-            if (ReferenceEquals(autoDigTarget, target))
-                BeginBocchiReturnSuppression();
-            return;
-        }
-
-        pendingPostFateAutoDigTarget = target;
-        pendingPostFateAutoDigUntil = Environment.TickCount64 + PostFateLureWaitMS;
-        TryStartPendingPostFateAutoDig();
-    }
-
-    private void TryStartPendingPostFateAutoDig()
-    {
-        var target = pendingPostFateAutoDigTarget;
-        if (target == null) return;
-
-        if (Environment.TickCount64 >= pendingPostFateAutoDigUntil)
-        {
-            pendingPostFateAutoDigTarget = null;
-            pendingPostFateAutoDigUntil = 0;
-            return;
-        }
-
-        if (!HasLure()) return;
-
-        pendingPostFateAutoDigTarget = null;
-        pendingPostFateAutoDigUntil = 0;
-        StartPostFateAutoDig(target);
-    }
-
-    private void StartPostFateAutoDig(Pot target)
-    {
-        if (autoDigTask == null) return;
-
-        autoDigActive = true;
-        autoDigTarget = target;
-        pendingCofferHuntAutoDigFor = -1;
-        if (nextSpawnTime > 0) autoDigStartedFor = nextSpawnTime;
-        digDirection = string.Empty;
-        awaitingDirection = false;
-        treasureRevealed = false;
-        RestoreMagicPotCofferInteractionPosition();
-        treasureInteractionStarted = false;
-        treasureEntityId = 0;
-        ResetAutoDigCandidateSearch();
-        ResetAutoDigLureState();
-        ResetDeathReturn();
-        EndBocchiReturnSuppression();
-        EndUndergroundDangerMode();
-        autoDigStatus = "等待 FATE 结算";
-
-        autoDigTask.Abort();
-        BeginBocchiReturnSuppression();
-        DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Magic Pot FATE 0x{target.FateID:X} ended with lure; post-FATE auto-dig started");
-        autoDigTask.DelayNext(2000);
-        autoDigTask.Enqueue(WaitOutOfCombat(15000));
-        autoDigTask.Enqueue(PlayerReady);
-        autoDigTask.DelayNext(1500);
-        autoDigTask.Enqueue(BeginDig);
-    }
-
-    private void DriveAutoDig(long now)
-    {
-        if (!config.EnableAutoDig) return;
-        if (!InOccultMapZone && !crossingDC) return;
-        if (undergroundTestActive) return;
-
-        if (InForkedTower)
-        {
-            if (autoDigActive || cofferHuntActive || standbyDeathReturning)
-            {
-                AbortAutoDig();
-                autoDigStartedFor = -1;
-            }
-
-            return;
-        }
-
-        if (pendingPostFateAutoDigTarget != null)
-        {
-            TryStartPendingPostFateAutoDig();
-            if (pendingPostFateAutoDigTarget != null) return;
-        }
-
-        if (autoDigActive)
-        {
-
-            if (autoDigStatus.StartsWith("前往") || autoDigStatus.StartsWith("跨区") ||
-                (autoDigDying && deathReturnStarted))
-                ClickSelectYesno();
-
-            var localPlayer = DService.Instance().ObjectTable.LocalPlayer;
-            if (localPlayer is { IsDead: true })
-            {
-                HandleAutoDigDeath();
-                return;
-            }
-
-            if (autoDigDying)
-            {
-
-                if (localPlayer is not { IsDead: false } || DService.Instance().Condition[ConditionFlag.BetweenAreas])
-                    return;
-
-                autoDigStartedFor = -1;
-                FinishAutoDig();
-                BocchiOn();
-                return;
-            }
-
-            if (ShouldFinishExpiredLure())
-            {
-                FinishExpiredLureSearch();
-                return;
-            }
-
-            return;
-        }
-
-        if (displayPot == null || nextSpawnTime <= 0) return;
-
-        var cofferHuntHandoff = pendingCofferHuntAutoDigFor == nextSpawnTime;
-        if (pendingCofferHuntAutoDigFor > 0 && !cofferHuntHandoff)
-            pendingCofferHuntAutoDigFor = -1;
-        if (autoDigStartedFor == nextSpawnTime && !cofferHuntHandoff) return;
-
-        var remaining = nextSpawnTime - now;
-        if (!cofferHuntHandoff && remaining is > 300 or < 30) return;
-
-        var currentPlayer = DService.Instance().ObjectTable.LocalPlayer;
-        GetCurrentBattleContentIDs(
-            currentPlayer,
-            out var currentFateID,
-            out var currentCriticalEncounterID);
-        var inCombat = DService.Instance().Condition[ConditionFlag.InCombat];
-        var inOrSettlingBattleContent = currentPlayer != null &&
-                                        InOrSettlingFateOrCriticalEngagement(currentPlayer);
-
-
-        if (autoDigBocchiPreparationFor != nextSpawnTime)
-        {
-            autoDigBocchiPreparationFor = nextSpawnTime;
-            autoDigBocchiWaitingForCurrentContent = inCombat || inOrSettlingBattleContent;
-            autoDigBocchiAllowedFateID = currentFateID;
-            autoDigBocchiAllowedCriticalEncounterID = currentCriticalEncounterID;
-
-            if (autoDigBocchiWaitingForCurrentContent)
-            {
-                DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Magic Pot preparation armed; waiting for current FATE/CE to finish, " +
-                    $"fate={currentFateID}, ce={currentCriticalEncounterID}, remaining={remaining}s");
-            }
-        }
-
-
-        if (autoDigBocchiStoppedFor != nextSpawnTime)
-        {
-            if (autoDigBocchiWaitingForCurrentContent)
-            {
-                var sameFate = autoDigBocchiAllowedFateID != 0 &&
-                               currentFateID == autoDigBocchiAllowedFateID;
-                var sameCriticalEncounter = autoDigBocchiAllowedCriticalEncounterID != 0 &&
-                                            currentCriticalEncounterID == autoDigBocchiAllowedCriticalEncounterID;
-                var switchedToDifferentContent =
-                    (currentFateID != 0 && currentFateID != autoDigBocchiAllowedFateID) ||
-                    (currentCriticalEncounterID != 0 &&
-                     currentCriticalEncounterID != autoDigBocchiAllowedCriticalEncounterID);
-
-
-                if (inCombat || sameFate || sameCriticalEncounter ||
-                    (!switchedToDifferentContent && inOrSettlingBattleContent))
-                    return;
-
-                autoDigBocchiWaitingForCurrentContent = false;
-                DService.Instance().Log.Information(
-                    "[OccultPotNotifier] Current FATE/CE completed; Magic Pot preparation is taking control");
-            }
-
-            autoDigBocchiStoppedFor = nextSpawnTime;
-            autoDigBocchiTravelStopRetriedFor = -1;
-            autoDigBocchiTravelStopRetryAt = Environment.TickCount64 + 1000;
-            var usedEmergencyStop = EmergencyStopBocchi();
-            DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Magic Pot preparation takeover; BOCCHI emergency stop direct={usedEmergencyStop}, remaining={remaining}s");
-            return;
-        }
-
-
-        if (inCombat || inOrSettlingBattleContent)
-            return;
-
-        if (BocchiAutomator.IsTravellingToFateOrCriticalEncounter())
-        {
-            if (autoDigBocchiTravelStopRetriedFor != nextSpawnTime &&
-                Environment.TickCount64 >= autoDigBocchiTravelStopRetryAt)
-            {
-                autoDigBocchiTravelStopRetriedFor = nextSpawnTime;
-                var usedEmergencyStop = EmergencyStopBocchi();
-                DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Magic Pot preparation reclaimed a new BOCCHI FATE/CE trip; emergency stop direct={usedEmergencyStop}");
-            }
-
-            return;
-        }
-
-        pendingCofferHuntAutoDigFor = -1;
-        autoDigStartedFor = nextSpawnTime;
-        StartAutoDig(displayPot);
-    }
-
-    private bool ShouldEmergencyReturn(OmenBattleChara? localPlayer)
-    {
-        if (emergencyReturnRecovering) return false;
-
-        if (!config.EnableAutoDig || !config.AutoDigEmergencyReturn || localPlayer is not { IsDead: false } ||
-            localPlayer.MaxHp == 0 || (ulong)localPlayer.CurrentHp * 2 >= localPlayer.MaxHp ||
-            InForkedTower || InOrSettlingFateOrCriticalEngagement(localPlayer) ||
-            BocchiAutomator.IsTravellingToFateOrCriticalEncounter())
-        {
-            emergencyReturnTriggered = false;
-            return false;
-        }
-
-        foreach (var obj in DService.Instance().ObjectTable)
-        {
-            if (obj is not OmenBattleChara enemy ||
-                enemy.ObjectKind != Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc ||
-                (enemy.StatusFlags & DalamudStatusFlags.Hostile) == 0 ||
-                enemy.IsDead ||
-                enemy.Level <= localPlayer.Level ||
-                enemy.TargetObjectID != localPlayer.GameObjectID)
-                continue;
-
-            return !emergencyReturnTriggered;
-        }
-
-        emergencyReturnTriggered = false;
-        return false;
-    }
-
-    private unsafe bool InOrSettlingFateOrCriticalEngagement(OmenBattleChara localPlayer)
-    {
-        if (IsInFateOrCriticalEngagement(localPlayer))
-        {
-            battleContentSettling = true;
-            return true;
-        }
-
-        if (battleContentSettling && HasRemainingHostileAggro()) return true;
-
-        battleContentSettling = false;
-        return false;
-    }
-
-    private static unsafe bool IsInFateOrCriticalEngagement(OmenBattleChara localPlayer)
-    {
-        var gameObject = (GameObject*)localPlayer.Address;
-        var events     = DynamicEventContainer.GetInstance();
-        return (gameObject != null && gameObject->FateId != 0) ||
-               (events != null && events->CurrentEventId != 0);
-    }
-
-    private static unsafe void GetCurrentBattleContentIDs(
-        OmenBattleChara? localPlayer,
-        out uint fateID,
-        out uint criticalEncounterID)
-    {
-        var gameObject = localPlayer == null ? null : (GameObject*)localPlayer.Address;
-        var events = DynamicEventContainer.GetInstance();
-        fateID = gameObject == null ? 0 : (uint)gameObject->FateId;
-        criticalEncounterID = events == null ? 0 : (uint)events->CurrentEventId;
-    }
-
-    private static bool HasRemainingHostileAggro()
-    {
-        if (DService.Instance().Condition[ConditionFlag.InCombat]) return true;
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return false;
-
-        foreach (var obj in DService.Instance().ObjectTable)
-        {
-            if (obj is OmenBattleChara
-                {
-                    ObjectKind: Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc,
-                    IsDead: false
-                } enemy &&
-                (enemy.StatusFlags & DalamudStatusFlags.Hostile) != 0 &&
-                enemy.TargetObjectID == localPlayer.GameObjectID)
-                return true;
-        }
-
-        return false;
-    }
-
-    private void TriggerEmergencyReturn()
-    {
-        emergencyReturnTriggered = true;
-        emergencyReturnRecovering = true;
-        emergencyReturnRecoverAt = Environment.TickCount64 + 6000;
-        SendCommand("/bocchiillegal off");
-        AbortAutoDig();
-        GameMain.ExecuteCommand(214);
-        Speak("遭遇危险，已返回");
-    }
-
-    private void RestoreBocchiAfterEmergencyReturn()
-    {
-        if (!emergencyReturnRecovering || Environment.TickCount64 < emergencyReturnRecoverAt || !PlayerReady())
-            return;
-
-        emergencyReturnRecovering = false;
-        emergencyReturnRecoverAt = 0;
-        SendCommand("/bocchiillegal on");
-    }
-
-    private void HandleAutoDigDeath()
-    {
-        if (cofferHuntActive) StopCofferHunt();
-
-        if (config.AutoDigStopOnDeath)
-        {
-            AbortAutoDig();
-            return;
-        }
-
-        if (!config.AutoDigReturnOnDeath) return;
-
-        if (!autoDigDying)
-        {
-            autoDigDying  = true;
-            autoDigStatus = config.AutoDigWaitForRescue ? "死亡，等待施救" : "死亡返回";
-            awaitingDirection = false;
-            ResetAutoDigCandidateSearch();
-            BeginDeathReturn();
-            EndBocchiReturnSuppression();
-            autoDigTask?.Abort();
-            VnavStop();
-            SendCommand("/bocchiillegal off");
-        }
-
-        TriggerDeathReturn();
-    }
-
-
-    private static bool ClickSelectYesno() => AddonSelectYesnoEvent.ClickYes();
-
-
-    private void BeginDeathReturn()
-    {
-        deathReturnAt             = Environment.TickCount64 + (config.AutoDigWaitForRescue ? DeathReturnRescueWaitMS : 0);
-        deathReturnStarted        = false;
-        nextDeathReturnAttemptAt  = 0;
-    }
-
-    private bool IsWaitingForRescue() =>
-        config.AutoDigWaitForRescue &&
-        !deathReturnStarted &&
-        (autoDigDying || standbyDeathReturning) &&
-        DService.Instance().ObjectTable.LocalPlayer is { IsDead: true };
-
-    private bool TriggerDeathReturn()
-    {
-        var now = Environment.TickCount64;
-        if (now < deathReturnAt) return false;
-        if (config.AutoDigWaitForRescue &&
-            DService.Instance().ObjectTable.LocalPlayer is { IsDead: true } localPlayer &&
-            HasRaise(localPlayer))
-            return false;
-
-        if (!deathReturnStarted)
-        {
-            deathReturnStarted = true;
-            autoDigStatus      = "死亡返回";
-            NotifyDeath();
-        }
-
-        if (now < nextDeathReturnAttemptAt) return true;
-
-        ExecuteCommandManager.Instance().ExecuteCommand(ExecuteCommandFlag.Revive, 8);
-        nextDeathReturnAttemptAt = now + 1000;
-        return true;
-    }
-
-    private void NotifyDeath()
-    {
-        NotifyHelper.Instance().NotificationInfo("检测到死亡，自动返回起始点…");
-    }
-
-    private void CheckStandbyDeath()
-    {
-        if (autoDigActive) return;
-        if (!config.EnableAutoDig || !config.AutoDigReturnOnDeath || config.AutoDigStopOnDeath) return;
-        if (!InOccultMapZone) return;
-
-        var lp   = DService.Instance().ObjectTable.LocalPlayer;
-        var cond = DService.Instance().Condition;
-
-        if (lp is { IsDead: true })
-        {
-            if (!standbyDeathReturning)
-            {
-                standbyDeathReturning = true;
-                autoDigStatus = "死亡返回";
-                StopCofferHunt();
-                VnavStop();
-                if (config.AutoDigWaitForRescue) autoDigStatus = "死亡，等待施救";
-                BeginDeathReturn();
-                SendCommand("/bocchiillegal off");
-            }
-
-            if (TriggerDeathReturn()) ClickSelectYesno();
-            return;
-        }
-
-        if (standbyDeathReturning && lp is { IsDead: false } && !cond[ConditionFlag.BetweenAreas])
-        {
-            standbyDeathReturning = false;
-            ResetDeathReturn();
-            autoDigStatus = string.Empty;
-            BocchiOn();
-        }
-    }
-
-    private void StartAutoDig(Pot target)
-    {
-        if (autoDigTask == null) return;
-
-        autoDigActive = true;
-        autoDigTarget = target;
-        digDirection  = string.Empty;
-        awaitingDirection = false;
-        treasureRevealed = false;
-        RestoreMagicPotCofferInteractionPosition();
-        treasureInteractionStarted = false;
-        treasureEntityId = 0;
-        ResetAutoDigCandidateSearch();
-        ResetAutoDigLureState();
-        ResetDeathReturn();
-        EndBocchiReturnSuppression();
-        EndUndergroundDangerMode();
-        autoDigStatus = $"前往{target.DirName}罐";
-
-        autoDigTask.Abort();
-
-        autoDigTask.Enqueue(() => SendCommand("/bocchiillegal off"));
-        autoDigTask.DelayNext(800);
-        autoDigTask.Enqueue(WaitOutOfCombat(10000));
-        autoDigTask.Enqueue(PlayerReady);
-        EnqueuePtp(target);
-        EnqueueMoveTo(
-            RandomOffset(target.World, 6f),
-            4f,
-            timeoutMs: target.TerritoryID == OccultNorthTerritory ? 240000 : 90000);
-        autoDigTask.Enqueue(() => { autoDigStatus = "等待刷新"; return target.Alive; });
-        autoDigTask.Enqueue(() => { Dismount(); ClearCurrentTarget(); return true; });
-        autoDigTask.DelayNext(1000);
-        autoDigTask.Enqueue(() =>
-        {
-            autoDigStatus = "打 FATE";
-            return BocchiOn();
-        });
-        autoDigTask.Enqueue(WaitBocchiCombat(target, 5000));
-        autoDigTask.Enqueue(() => !target.Alive);
-        autoDigTask.Enqueue(() =>
-        {
-            autoDigStatus = "等待 FATE 结算";
-            BeginBocchiReturnSuppression();
-            return true;
-        });
-        autoDigTask.DelayNext(2000);
-        autoDigTask.Enqueue(WaitOutOfCombat(15000));
-        autoDigTask.Enqueue(PlayerReady);
-        autoDigTask.DelayNext(1500);
-        autoDigTask.Enqueue(BeginDig);
-    }
-
-    private bool BeginDig()
-    {
-        if (autoDigTask == null) return true;
-
-
-
-        EndBocchiReturnSuppression();
-
-        digRelocateCount = 0;
-
-        autoDigStatus = "等待撒娇罐";
-        autoDigTask.Enqueue(WaitLure(20000));
-        autoDigTask.Enqueue(() =>
-        {
-            if (!HasLure())
-            {
-                autoDigStatus = config.EnableAutoCrossDC ? "未获得撒娇罐，准备跨区" : "未获得撒娇罐，结束本轮";
-                EnqueueFinish();
-                return true;
-            }
-            autoDigLureAcquired  = true;
-            autoDigLureExhausted = false;
-            autoDigLureMissingAt = 0;
-            EnqueueDigCycle(false);
-            return true;
-        });
-        return true;
-    }
-
-    private void EnqueueDigCycle(bool continuation)
-    {
-        if (autoDigTask == null) return;
-
-        var territory = autoDigTarget?.TerritoryID ?? GameState.TerritoryType;
-        var regionKey = continuation ? "R" : autoDigTarget?.DirName == "南" ? "S" : "N";
-        digDirection = string.Empty;
-        awaitingDirection = false;
-        autoDigCofferPositions = [];
-
-        if (continuation)
-        {
-            if (territory == OccultNorthTerritory)
-            {
-                if (DangerZoneHandling != DangerZoneHandlingMode.Underground)
-                {
-                    HandleNorthContinuationDanger();
-                    return;
-                }
-
-                autoDigStatus = "北征续罐：地表取方位";
-            }
-            else
-            {
-                autoDigStatus = "续罐→水晶洞窟";
-                autoDigTask.Enqueue(() => SendCommand("/pdr ptp 水晶洞窟"));
-                autoDigTask.DelayNext(1000);
-                autoDigTask.Enqueue(WaitArrive(CrystalCavernPos, 50f, 20000));
-                autoDigTask.DelayNext(8000);
-            }
-        }
-
-        autoDigTask.Enqueue(() => { Dismount(); return true; });
-        autoDigTask.DelayNext(700);
-        autoDigTask.Enqueue(() => { autoDigStatus = "取方位"; UseLureForDirection(); return true; });
-        autoDigTask.DelayNext(3000);
-        autoDigTask.Enqueue(WaitDirection(6000));
-        autoDigTask.Enqueue(() =>
-        {
-            if (string.IsNullOrEmpty(digDirection))
-            {
-                Dismount();
-                UseLureForDirection();
-            }
-            return true;
-        });
-        autoDigTask.DelayNext(3000);
-        autoDigTask.Enqueue(WaitDirection(6000));
-        autoDigTask.Enqueue(() =>
-        {
-            awaitingDirection = false;
-            if (string.IsNullOrEmpty(digDirection))
-            {
-                if (HasLure())
-                    TryRelocate(continuation, "未取得方位，重新尝试");
-                else
-                    EnqueueFinish();
-                return true;
-            }
-
-            var positions = ResolveDigPositions(territory, regionKey, digDirection);
-            autoDigCofferPositions = positions;
-            if (positions.Length == 0)
-                TryRelocate(continuation, $"{digDirection}方向没有未尝试候选点，重新定位");
-            else
-            {
-                digRelocateCount = 0;
-                EnqueueDigRoute(regionKey, digDirection, positions);
-            }
-
-            return true;
-        });
-    }
-
-    private static readonly HashSet<string> SouthHornDangerZones =
-        ["S正北", "S正南", "S正西", "S西北", "S西南", "R正南", "R正西", "R西北", "R西南"];
-
-
-    private static readonly Vector2[] NorthHornDangerPositions =
-    [
-        new(440.298f,  -926.5872f), // 30.2, 3.0
-        new(-834f,     -587.4f),    // 4.6, 9.8
-        new(-975.4507f, -526.2878f), // 1.9, 10.9
-        new(-960f,     -425.8f),    // 2.2, 12.9
-        new(-586.3f,   -715.2f),    // 9.6, 7.3
-        new(-88.43135f,   4.891054f), // 19.7, 21.5
-        new(-259.6f,     56.9f),    // 16.3, 22.6
-        new(-172.6f,    103.2f)     // 17.9, 23.5
-    ];
-
-    private const float NorthHornDangerRadius = 20f;
-
-
-    private static readonly Vector3 CrystalCavernPos = new(-354.6388f, 99.993385f, -120.4032f);
-    private static bool IsNorthHornDangerPosition(uint territory, Vector3 position)
-    {
-        if (territory != OccultNorthTerritory)
-            return false;
-
-        var radiusSquared = NorthHornDangerRadius * NorthHornDangerRadius;
-        foreach (var danger in NorthHornDangerPositions)
-        {
-            var dx = position.X - danger.X;
-            var dz = position.Z - danger.Y;
-            if (dx * dx + dz * dz <= radiusSquared)
-                return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsDangerPosition(uint territory, string regionKey, string direction, Vector3 position) =>
-        territory switch
-        {
-            OccultNorthTerritory => IsNorthHornDangerPosition(territory, position),
-            OccultTerritory      => SouthHornDangerZones.Contains(regionKey + direction),
-            _                    => false
-        };
-
-
-
-    private static Vector3[] OrderDigPositions(
-        uint territory,
-        string regionKey,
-        string direction,
-        Vector3[] positions,
-        Vector3 from)
-    {
-        if (positions.Length <= 1) return positions;
-
-        Array.Sort(positions, (a, b) =>
-        {
-            var aDelta = new Vector2(a.X - from.X, a.Z - from.Z);
-            var bDelta = new Vector2(b.X - from.X, b.Z - from.Z);
-            return aDelta.LengthSquared().CompareTo(bDelta.LengthSquared());
-        });
-
-        var ordered = new Vector3[positions.Length];
-        var index   = 0;
-        foreach (var position in positions)
-            if (!IsDangerPosition(territory, regionKey, direction, position))
-                ordered[index++] = position;
-        foreach (var position in positions)
-            if (IsDangerPosition(territory, regionKey, direction, position))
-                ordered[index++] = position;
-
-        return ordered;
-    }
-
-    private bool EnqueueDangerManual(string warning)
-    {
-        if (DangerZoneHandling != DangerZoneHandlingMode.Manual || autoDigTask == null)
-            return false;
-
-        if (config.AutoDigDangerTts)
-            Speak(warning);
-
-
-        autoDigStatus = "危险区，请手动挖";
-        autoDigTask.Enqueue(WaitBuffGone(420000));
-        autoDigTask.DelayNext(10000);
-        autoDigTask.Enqueue(() => BocchiOn());
-        autoDigTask.Enqueue(() => { FinishAutoDig(); return true; });
-        return true;
-    }
-
-    private bool EnqueueDangerSkip(string notification)
-    {
-        if (DangerZoneHandling != DangerZoneHandlingMode.Skip || autoDigTask == null)
-            return false;
-
-        awaitingDirection = false;
-        ResetAutoDigCandidateSearch();
-        VnavStop();
-        ResetAutoDigLureState();
-        autoDigStatus = "危险区，跳过本轮挖罐";
-        StatusManager.ExecuteStatusOff(LureStatusID);
-        NotifyHelper.Instance().NotificationInfo(notification);
-        autoDigTask.Enqueue(WaitBuffGone(5000));
-        autoDigTask.Enqueue(() => BocchiOn());
-        autoDigTask.Enqueue(() => { FinishAutoDig(); return true; });
-        return true;
-    }
-
-    private static string RegionName(string regionKey) => regionKey switch
-    {
-        "N" => "北罐",
-        "S" => "南罐",
-        "R" => "续罐",
-        _   => string.Empty
-    };
-
-    private void ResetAutoDigCandidateSearch()
-    {
-        autoDigCofferPositions = [];
-        autoDigTriedPositions.Clear();
-        preexistingCofferEntityIds.Clear();
-        digRelocateCount = 0;
-    }
-
-
-
-    private void TryRelocate(bool continuation, string status)
-    {
-        if (autoDigTask == null) return;
-
-        if (digRelocateCount >= MaxDigRelocate)
-        {
-            Speak("多次未找到宝箱，放弃本次挖宝");
-            EnqueueFinish();
-            return;
-        }
-
-        digRelocateCount++;
-        autoDigStatus = status;
-        autoDigTask.DelayNext(3000);
-        EnqueueDigCycle(continuation);
-    }
-
-    private void EnqueueDigRoute(string regionKey, string direction, Vector3[] positions)
-    {
-        if (autoDigTask == null) return;
-
-        autoDigCofferPositions = positions;
-
-        autoDigStatus = $"挖宝 {RegionName(regionKey)}{direction}";
-        EnqueueDigStep(regionKey, direction, positions, 0);
-    }
-
-    private Vector3[] ResolveDigPositions(uint territory, string regionKey, string direction)
-    {
-        var pool = OccultData.PotPositions(territory, regionKey == "R", regionKey == "S");
-        if (pool.Length == 0) return [];
-
-        var available = new List<Vector3>(pool.Length);
-        foreach (var position in pool)
-            if (!autoDigTriedPositions.Contains(position))
-                available.Add(position);
-        if (available.Count == 0) return [];
-
-
-        var from = DService.Instance().ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
-        var positions = OccultData.RefinePositionsByDirection(available.ToArray(), from, direction);
-        return OrderDigPositions(territory, regionKey, direction, positions, from);
-    }
-
-
-    private void EnqueueDigStep(string regionKey, string direction, Vector3[] positions, int index)
-    {
-        if (autoDigTask == null) return;
-
-        if (index >= positions.Length)
-        {
-            autoDigCofferPositions = [];
-            if (HasLure())
-                TryRelocate(regionKey == "R", "未找到宝箱，重新定位");
-            else
-                EnqueueFinish();
-            return;
-        }
-
-        autoDigCofferPositions = positions[index..];
-
-        var territory = autoDigTarget?.TerritoryID ?? GameState.TerritoryType;
-        var dangerPosition = IsDangerPosition(territory, regionKey, direction, positions[index]) ||
-                             territory == OccultNorthTerritory && regionKey == "R";
-        if (dangerPosition)
-        {
-            if (EnqueueDangerSkip($"已跳过危险区候选点，并取消撒娇罐 Buff") ||
-                EnqueueDangerManual($"危险区候选点，{RegionName(regionKey)}{direction}方向，请手动处理"))
-                return;
-        }
-
-        autoDigTriedPositions.Add(positions[index]);
-        var useUndergroundRoute = undergroundDangerActive ||
-                                  dangerPosition && DangerZoneHandling == DangerZoneHandlingMode.Underground;
-        if (useUndergroundRoute)
-        {
-            EnqueueUndergroundMoveTo(positions[index], 3f);
-            EnqueueReturnToSurface(positions[index]);
-        }
-        else
-            EnqueueMoveTo(
-                positions[index],
-                3f,
-                mount: true,
-                timeoutMs: territory == OccultNorthTerritory ? 240000 : 90000);
-        autoDigTask.Enqueue(WaitDismounted(5000));
-        autoDigTask.DelayNext(700);
-        autoDigTask.Enqueue(() =>
-        {
-            treasureRevealed = false;
-            RestoreMagicPotCofferInteractionPosition();
-            treasureInteractionStarted = false;
-            treasureEntityId = 0;
-            digDirection      = string.Empty;
-            awaitingDirection = false;
-            return true;
-        });
-        autoDigTask.Enqueue(WaitTreasureAtPoint(positions[index], 5000));
-        autoDigTask.Enqueue(WaitTreasureOpened(30000));
-        autoDigTask.Enqueue(() =>
-        {
-
-
-            if (!treasureRevealed)
-            {
-                var nextDirection = direction;
-                Vector3[] remaining;
-                if (!string.IsNullOrEmpty(digDirection))
-                {
-                    var from = DService.Instance().ObjectTable.LocalPlayer?.Position ?? positions[index];
-                    var previousRemaining = positions[(index + 1)..];
-                    var refined = OccultData.RefinePositionsByDirection(
-                        previousRemaining,
-                        from,
-                        digDirection);
-
-                    if (refined.Length != 0)
-                    {
-                        nextDirection = digDirection;
-                        remaining = OrderDigPositions(
-                            territory,
-                            regionKey,
-                            digDirection,
-                            refined,
-                            from);
-                        autoDigStatus = $"宝箱在{digDirection}方向，继续定位";
-                        DService.Instance().Log.Information(
-                            $"[OccultPotNotifier] Refined remaining treasure candidates: " +
-                            $"direction={digDirection}, before={previousRemaining.Length}, after={remaining.Length}");
-                    }
-                    else
-                    {
-                        remaining = OrderDigPositions(
-                            territory,
-                            regionKey,
-                            direction,
-                            previousRemaining,
-                            from);
-                        autoDigStatus = $"{digDirection}方向未匹配，保留剩余候选";
-                        DService.Instance().Log.Warning(
-                            $"[OccultPotNotifier] Treasure direction matched no remaining candidates; " +
-                            $"direction={digDirection}, retained={remaining.Length}");
-                    }
-                }
-                else
-                {
-                    var from = DService.Instance().ObjectTable.LocalPlayer?.Position ?? positions[index];
-                    remaining = OrderDigPositions(
-                        territory,
-                        regionKey,
-                        direction,
-                        positions[(index + 1)..],
-                        from);
-                }
-
-                if (remaining.Length != 0) digRelocateCount = 0;
-                EnqueueDigStep(regionKey, nextDirection, remaining, 0);
-                return true;
-            }
-
-            ResetAutoDigCandidateSearch();
-
-            autoDigTask.DelayNext(2500);
-            autoDigTask.Enqueue(() =>
-            {
-                if (!HasLure())
-                    EnqueueFinish();
-                else if ((autoDigTarget?.TerritoryID ?? GameState.TerritoryType) == OccultNorthTerritory)
-                {
-                    if (DangerZoneHandling == DangerZoneHandlingMode.Underground)
-                    {
-                        digRelocateCount = 0;
-                        EnqueueDigCycle(true);
-                    }
-                    else
-                        HandleNorthContinuationDanger();
-                }
-                else
-                {
-                    digRelocateCount = 0;
-                    EnqueueDigCycle(true);
-                }
-                return true;
-            });
-            return true;
-        });
-    }
-
-    private void EnqueueFinish()
-    {
-        if (autoDigTask == null) return;
-
-        awaitingDirection = false;
-        ResetAutoDigCandidateSearch();
-
-        var targetTerritory = autoDigTarget?.TerritoryID ?? GameState.TerritoryType;
-        autoDigTask.Enqueue(() => { EndUndergroundDangerMode(); return true; });
-
-        if (config.EnableAutoCrossDC)
-        {
-            autoDigTask.Enqueue(() => { autoDigStatus = "查询跨区"; StartCrossDCQuery(targetTerritory); return true; });
-            autoDigTask.Enqueue(WaitCrossDCQuery(15000));
-            autoDigTask.Enqueue(EnqueueCrossDCOrStay);
-        }
-        else
-        {
-            autoDigTask.Enqueue(() => { EndBocchiReturnSuppression(); UseReturn(); return true; });
-            autoDigTask.DelayNext(6000);
-            autoDigTask.Enqueue(PlayerReady);
-            autoDigTask.Enqueue(() => BocchiOn());
-            autoDigTask.Enqueue(() => { FinishAutoDig(); return true; });
-        }
-    }
-
-    private void HandleNorthContinuationDanger()
-    {
-        continuationActive = true;
-        markersDirty       = true;
-        if (EnqueueDangerSkip("已跳过北征续罐危险区，并取消撒娇罐 Buff"))
-            return;
-
-        NotifyHelper.Instance().NotificationInfo("北征续罐按危险区处理，已停在原地，请手动继续");
-        if (EnqueueDangerManual("危险区宝箱，北征续罐，请手动处理"))
-            return;
-
-        autoDigStatus = "北征续罐，请手动处理";
-        FinishAutoDig();
-    }
-
-    #region 挖罐间隙自动寻宝（DailyRoutines）
-
-    private unsafe void DrivePostBattleCofferHunt(long nowUnix)
-    {
-        if (!config.EnableCofferHunt || !InOccultMapZone || InForkedTower)
-        {
-            ResetPostBattleCofferCheck();
-            return;
-        }
-
-        var player = DService.Instance().ObjectTable.LocalPlayer;
-        if (player is null) return;
-
-        if (IsInFateOrCriticalEngagement(player))
-        {
-            postBattleContentObserved         = true;
-            postBattleTreasureCheckPending    = false;
-            return;
-        }
-
-        if (postBattleContentObserved)
-        {
-            if (HasRemainingHostileAggro()) return;
-
-            postBattleContentObserved         = false;
-            postBattleTreasureCheckPending    = true;
-            postBattleCompletedAt             = DateTime.Now;
-            postBattleCheckExpireAt           = Environment.TickCount64 + PostBattleCheckTimeoutMS;
-        }
-
-        if (!postBattleTreasureCheckPending || autoDigActive || cofferHuntActive || crossingDC ||
-            standbyDeathReturning)
-            return;
-
-        var nowTick = Environment.TickCount64;
-        if (nowTick >= postBattleCheckExpireAt || nextSpawnTime <= 0 ||
-            nextSpawnTime - nowUnix <= CofferHuntRequiredLeadSeconds)
-        {
-            ResetPostBattleCofferCheck();
-            return;
-        }
-
-        if (!BocchiAutomator.TryGetTreasureScanAfter(
-                postBattleCompletedAt,
-                lastTreasuresightCastAt,
-                out var bronzeChests,
-                out var silverChests))
-            return;
-
-        ResetPostBattleCofferCheck();
-        if (silverChests < CofferHuntSilverCap && bronzeChests < CofferHuntBronzeCap) return;
-
-        autoDigTask ??= new();
-        autoDigTask.Abort();
-        autoDigActive = true;
-        autoDigStatus = $"宝箱数量满足：青铜 {bronzeChests} / 白银 {silverChests}";
-        SendCommand("/bocchiillegal off");
-        NotifyHelper.Instance().NotificationInfo(
-            $"宝箱达到上限，开始自动寻宝：白银 {silverChests}、青铜 {bronzeChests}");
-        StartCofferHunt();
-    }
-
-    private void ResetPostBattleCofferCheck()
-    {
-        postBattleContentObserved         = false;
-        postBattleTreasureCheckPending    = false;
-        postBattleCompletedAt             = DateTime.MinValue;
-        postBattleCheckExpireAt           = 0;
-    }
-
-    private unsafe void ObserveTreasuresightCast()
-    {
-        var player = DService.Instance().ObjectTable.LocalPlayer;
-        var character = player == null ? null : (BattleChara*)player.Address;
-        CastInfo* castInfo = character == null ? null : character->GetCastInfo();
-        var castingTreasuresight = castInfo != null && castInfo->IsCasting &&
-                                   (castInfo->ActionId == TreasuresightActionID ||
-                                    castInfo->ActionType == (byte)ActionType.GeneralAction &&
-                                    castInfo->ActionId == TreasuresightGeneralActionID);
-        if (!castingTreasuresight)
-        {
-            treasuresightCastObserved = false;
-            return;
-        }
-
-        if (treasuresightCastObserved) return;
-
-        treasuresightCastObserved = true;
-        lastTreasuresightCastAt = DateTime.Now;
-        DService.Instance().Log.Information(
-            $"[OccultPotNotifier] BOCCHI Treasuresight cast observed: {lastTreasuresightCastAt:O}");
-    }
-
-    private void ManualStartCofferHunt()
-    {
-        if (!InOccultMapZone || autoDigActive || cofferHuntActive || undergroundTestActive) return;
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return;
-
-        autoDigTask ??= new();
-        autoDigTask.Abort();
-        autoDigActive                 = true;
-        cofferHuntActive              = true;
-        cofferHuntTerritory           = GameState.TerritoryType;
-        drHuntStarted                 = true;
-        drOuterRouteActive            = false;
-        cofferHuntStartedAt           = Environment.TickCount64;
-        autoDigStatus                 = "DR 内环寻宝中";
-        pendingCofferHuntAutoDigFor    = -1;
-
-        EndBocchiReturnSuppression();
-        VnavStop();
-        var usedEmergencyStop = EmergencyStopBocchi();
-        SendDrCofferHuntStartCommand();
-        NotifyHelper.Instance().NotificationInfo("DR 内环寻宝已从当前位置启动");
-        DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Manual DailyRoutines treasure hunt dispatched at {localPlayer.Position:F2}; " +
-            $"BOCCHI emergency stop direct={usedEmergencyStop}");
-    }
-
-    private void StopAutoDigManually()
-    {
-        AbortAutoDig();
-        if (nextSpawnTime > 0) autoDigStartedFor = nextSpawnTime;
-    }
-
-    private void StartCofferHunt()
-    {
-        if (autoDigTask == null) return;
-
-        cofferHuntActive    = true;
-        cofferHuntTerritory = GameState.TerritoryType;
-        drHuntStarted       = false;
-        drOuterRouteActive  = false;
-        EndBocchiReturnSuppression();
-        StartDrCofferHunt();
-    }
-
-    private void StartDrCofferHunt()
-    {
-        if (autoDigTask == null) return;
-
-        var routeName = drOuterRouteActive ? "外环" : "内环";
-        var candidates = GetShuffledDrAetherytes(cofferHuntTerritory);
-        if (candidates.Count == 0)
-        {
-            ClearCofferHuntState();
-            NotifyHelper.Instance().NotificationWarning($"当前区域没有可用于 DR {routeName}寻宝的非初始点魔路水晶");
-            EnqueueReturnStandby();
-            return;
-        }
-
-        var basePosition = GetCofferHuntBasePosition(cofferHuntTerritory);
-        autoDigStatus = $"DR {routeName}准备：返回初始点";
-        autoDigTask.Enqueue(() =>
-        {
-            var usedEmergencyStop = EmergencyStopBocchi();
-            DService.Instance().Log.Information(
-                $"[OccultPotNotifier] DR treasure hunt preparation; BOCCHI emergency stop direct={usedEmergencyStop}");
-            return true;
-        });
-        autoDigTask.Enqueue(() => { UseReturn(); return true; });
-        autoDigTask.Enqueue(WaitDrReturnToBase(basePosition, 15000));
-
-        autoDigTask.Enqueue(() =>
-        {
-            autoDigStatus = $"DR {routeName}准备：前往初始点水晶";
-            VnavMoveTo(basePosition);
-            return true;
-        });
-        autoDigTask.Enqueue(WaitArrive(basePosition, 3f, 20000));
-        autoDigTask.Enqueue(() => { VnavStop(); return true; });
-        autoDigTask.DelayNext(800);
-
-        foreach (var aetheryte in candidates)
-            EnqueueDrCofferHuntAttempt(aetheryte);
-
-        autoDigTask.Enqueue(() =>
-        {
-            if (drHuntStarted) return true;
-
-            SendCommand("/pdr ptreasure abort");
-            ClearCofferHuntState();
-            NotifyHelper.Instance().NotificationWarning($"DR {routeName}寻宝未能启动：已尝试所有非初始点魔路水晶");
-            EnqueueReturnStandby();
-            return true;
-        });
-    }
-
-    private static Func<bool?> WaitDrReturnToBase(Vector3 basePosition, int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            var now = Environment.TickCount64;
-            if (deadline == 0) deadline = now + timeoutMs;
-            ClickSelectYesno();
-            return (PlayerReady() && Arrived(basePosition, 50f)) || now >= deadline;
-        };
-    }
-
-    private void EnqueueDrCofferHuntAttempt(CrescentAetheryte aetheryte)
-    {
-        if (autoDigTask == null) return;
-        var commandIssued = false;
-        var roadFound      = false;
-        var roadPosition   = Vector3.Zero;
-        var teleportStarted = false;
-
-        // CrescentAetheryte.Position is the teleport landing point, not the crystal object.
-        // Re-acquire the current crystal before every hop because a landing point can sit outside interaction range.
-        autoDigTask.Enqueue(WaitFindNearbyAethernetWhen(
-            () => !drHuntStarted,
-            position =>
-            {
-                roadFound    = true;
-                roadPosition = position;
-                autoDigStatus = "DR 寻宝准备：靠近当前魔路水晶";
-                VnavMoveTo(position);
-            },
-            5000));
-        autoDigTask.Enqueue(WaitAethernetInteractionRangeWhen(
-            () => !drHuntStarted && roadFound,
-            () => roadPosition,
-            15000));
-
-        autoDigTask.Enqueue(() =>
-        {
-            if (drHuntStarted) return true;
-
-            VnavStop();
-            if (!roadFound || !InAethernetInteractionRange(roadPosition))
-            {
-                autoDigStatus = "DR 寻宝跳过：未走到当前魔路水晶交互范围";
-                return true;
-            }
-
-            autoDigStatus = $"DR 寻宝准备：传送至{aetheryte.Name}";
-            return true;
-        });
-        autoDigTask.Enqueue(WaitAethernetMenuOpenWhen(
-            () => !drHuntStarted && roadFound && InAethernetInteractionRange(roadPosition),
-            5000));
-        autoDigTask.Enqueue(() =>
-        {
-            if (drHuntStarted) return true;
-
-            teleportStarted = TryAethernetTeleportFromOpenMenu(aetheryte);
-            if (!teleportStarted && GetLifestreamActiveCustomAetheryte() != 0)
-                teleportStarted = TryLifestreamAethernetTeleport(aetheryte.DataID);
-
-            if (!teleportStarted)
-                autoDigStatus = $"DR 寻宝跳过：未能启动前往{aetheryte.Name}的魔路传送";
-            return true;
-        });
-        autoDigTask.DelayNext(1000);
-        autoDigTask.Enqueue(() => drHuntStarted || !teleportStarted || PlayerReady());
-        autoDigTask.Enqueue(WaitArriveUnlessDrStarted(
-            aetheryte.Position,
-            50f,
-            20000,
-            () => teleportStarted));
-        autoDigTask.DelayNext(800);
-        autoDigTask.Enqueue(() =>
-        {
-            if (drHuntStarted) return true;
-            if (!Arrived(aetheryte.Position, 50f)) return true;
-            if (HasNearbyOtherPlayer(50f))
-            {
-                autoDigStatus = $"DR 寻宝跳过：{aetheryte.Name}周围有玩家";
-                return true;
-            }
-
-            autoDigStatus = $"DR {(drOuterRouteActive ? "外环" : "内环")}启动：{aetheryte.Name}";
-            SendDrCofferHuntStartCommand();
-            commandIssued = true;
-            return true;
-        });
-        autoDigTask.Enqueue(WaitDrCofferHuntStarted(aetheryte.Position, 10000, () => commandIssued));
-        autoDigTask.Enqueue(() =>
-        {
-            if (drHuntStarted || !commandIssued) return true;
-            SendCommand("/pdr ptreasure abort");
-            return true;
-        });
-        autoDigTask.DelayNext(500);
-    }
-
-    private void SendDrCofferHuntStartCommand()
-    {
-        var routeAliases = drOuterRouteActive
-                               ? DrOuterLoopRouteAliases
-                               : DrInnerLoopRouteAliases;
-        foreach (var routeAlias in routeAliases)
-            SendCommand($"/pdr ptreasure {routeAlias}");
-
-        DService.Instance().Log.Information(
-            $"[OccultPotNotifier] DailyRoutines treasure route dispatched: {(drOuterRouteActive ? "outer" : "inner")}");
-    }
-
-    private Func<bool?> WaitArriveUnlessDrStarted(
-        Vector3 position,
-        float tolerance,
-        int timeoutMs,
-        Func<bool>? enabled = null)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (drHuntStarted) return true;
-            if (enabled is not null && !enabled()) return true;
-            if (deadline == 0) deadline = Environment.TickCount64 + timeoutMs;
-            return Arrived(position, tolerance) || Environment.TickCount64 >= deadline;
-        };
-    }
-
-    private Func<bool?> WaitDrCofferHuntStarted(Vector3 aetherytePosition, int timeoutMs, Func<bool> commandIssued)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (drHuntStarted) return true;
-            if (!commandIssued()) return true;
-            var now = Environment.TickCount64;
-            if (deadline == 0) deadline = now + timeoutMs;
-
-            var player = DService.Instance().ObjectTable.LocalPlayer;
-            if (player is not null && !DService.Instance().Condition[ConditionFlag.BetweenAreas] &&
-                Vector2.Distance(player.Position.ToVector2(), aetherytePosition.ToVector2()) > 10f)
-            {
-                drHuntStarted       = true;
-                cofferHuntStartedAt = now;
-                autoDigStatus       = $"DR {(drOuterRouteActive ? "外环" : "内环")}寻宝中";
-                NotifyHelper.Instance().NotificationInfo($"DR {(drOuterRouteActive ? "外环" : "内环")}寻宝已启动");
-                return true;
-            }
-
-            return now >= deadline;
-        };
-    }
-
-    private static bool HasNearbyOtherPlayer(float radius)
-    {
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return true;
-        var radiusSquared = radius * radius;
-
-        foreach (var obj in DService.Instance().ObjectTable)
-        {
-            if (obj.ObjectKind != Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Pc ||
-                obj.GameObjectID == localPlayer.GameObjectID)
-                continue;
-
-            var deltaX = obj.Position.X - localPlayer.Position.X;
-            var deltaZ = obj.Position.Z - localPlayer.Position.Z;
-            if ((deltaX * deltaX) + (deltaZ * deltaZ) <= radiusSquared)
-                return true;
-        }
-
-        return false;
-    }
-
-    private static List<CrescentAetheryte> GetShuffledDrAetherytes(uint territory)
-    {
-        var result = new List<CrescentAetheryte>();
-        var source = territory == OccultTerritory
-                         ? CrescentAetheryte.SouthHornAetherytes
-                         : CrescentAetheryte.NorthHornAetherytes;
-        var baseDataID = territory == OccultTerritory
-                             ? CrescentAetheryte.ExpeditionBaseCamp.DataID
-                             : CrescentAetheryte.NorthHornBaseCamp.DataID;
-
-        foreach (var aetheryte in source)
-            if (aetheryte.DataID != baseDataID)
-                result.Add(aetheryte);
-
-        for (var i = result.Count - 1; i > 0; i--)
-        {
-            var swapIndex = Random.Shared.Next(i + 1);
-            (result[i], result[swapIndex]) = (result[swapIndex], result[i]);
-        }
-
-        return result;
-    }
-
-    private static Vector3 GetCofferHuntBasePosition(uint territory) =>
-        territory == OccultTerritory
-            ? CrescentAetheryte.ExpeditionBaseCamp.Position
-            : CrescentAetheryte.NorthHornBaseCamp.Position;
-
-
-    private void MaybeCofferHuntDone()
-    {
-        if (!cofferHuntActive || !drHuntStarted ||
-            Environment.TickCount64 - cofferHuntStartedAt < 30000)
-            return;
-
-        var player = DService.Instance().ObjectTable.LocalPlayer;
-        if (player is null || DService.Instance().Condition[ConditionFlag.BetweenAreas] ||
-            Vector2.Distance(player.Position.ToVector2(), GetCofferHuntBasePosition(cofferHuntTerritory).ToVector2()) > 50f)
-            return;
-
-        if (!drOuterRouteActive)
-        {
-            autoDigTask?.Abort();
-            VnavStop();
-            drHuntStarted       = false;
-            drOuterRouteActive  = true;
-            cofferHuntStartedAt = 0;
-            autoDigStatus       = "DR 内环完成，准备外环";
-            NotifyHelper.Instance().NotificationInfo("DR 内环已完成，正在准备外环寻宝");
-            DService.Instance().Log.Information(
-                "[OccultPotNotifier] DailyRoutines inner treasure route completed; preparing outer route");
-            StartDrCofferHunt();
-            return;
-        }
-
-        var now       = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var remaining = nextSpawnTime - now;
-        pendingCofferHuntAutoDigFor = displayPot != null && nextSpawnTime > 0 &&
-                                      remaining <= CofferHuntStopLeadSeconds
-                                          ? nextSpawnTime
-                                          : -1;
-
-        ClearCofferHuntState();
-        autoDigTask?.Abort();
-        VnavStop();
-        autoDigStatus = pendingCofferHuntAutoDigFor > 0 ? "寻宝完成，回程后自动挖罐" : "寻宝完成，回程待命";
-        NotifyHelper.Instance().NotificationInfo(
-            pendingCofferHuntAutoDigFor > 0
-                ? "DR 已挖完宝箱，回程后衔接自动挖罐"
-                : "DR 已挖完宝箱，回程后恢复 BOCCHI 非法模式");
-        EnqueueReturnStandby();
-    }
-
-    private void MaybeStopCofferHunt(long nowUnix)
-    {
-        if (!cofferHuntActive) return;
-        if (nextSpawnTime <= 0 || nextSpawnTime - nowUnix > CofferHuntStopLeadSeconds) return;
-
-        pendingCofferHuntAutoDigFor = displayPot != null && nextSpawnTime > 0 ? nextSpawnTime : -1;
-        StopCofferHunt();
-        autoDigTask?.Abort();
-        autoDigStatus = "寻宝结束，回程";
-        EnqueueReturnStandby();
-    }
-
-    private void StopCofferHunt()
-    {
-        SendCommand("/pdr ptreasure abort");
-        ClearCofferHuntState();
-        VnavStop();
-    }
-
-    private void ClearCofferHuntState()
-    {
-        cofferHuntActive    = false;
-        cofferHuntTerritory = 0;
-        drHuntStarted       = false;
-        drOuterRouteActive  = false;
-    }
-
-    private void EnqueueReturnStandby()
-    {
-        if (autoDigTask == null) return;
-        var basePosition = GetCofferHuntBasePosition(GameState.TerritoryType);
-        autoDigTask.Enqueue(() => { EndBocchiReturnSuppression(); UseReturn(); return true; });
-        autoDigTask.Enqueue(WaitDrReturnToBase(basePosition, 15000));
-        autoDigTask.Enqueue(PlayerReady);
-        autoDigTask.Enqueue(() =>
-        {
-            var handoffToAutoDig = pendingCofferHuntAutoDigFor > 0 &&
-                                   pendingCofferHuntAutoDigFor == nextSpawnTime &&
-                                   displayPot != null;
-            if (!handoffToAutoDig)
-            {
-                pendingCofferHuntAutoDigFor = -1;
-                BocchiOn();
-            }
-
-            FinishAutoDig();
-            return true;
-        });
-    }
-
-    #endregion
-
-
-    private bool EnqueueCrossDCOrStay()
-    {
-        if (autoDigTask == null) return true;
-
-        if (crossDCTargetDC == 0 || string.IsNullOrEmpty(crossDCTargetWorld))
-        {
-
-            var reason = string.IsNullOrEmpty(crossDCReason) ? "无更优大区" : crossDCReason;
-            autoDigStatus = $"未跨区: {reason}";
-            NotifyHelper.Instance().NotificationInfo($"自动跨区未执行: {reason}");
-            if (config.SendTTS) Speak("未跨区");
-            autoDigTask.Enqueue(() => { EndBocchiReturnSuppression(); return BocchiOn(); });
-            autoDigTask.Enqueue(() => { FinishAutoDig(); return true; });
-            return true;
-        }
-
-        var world = crossDCTargetWorld;
-        var territory = crossDCTargetTerritory;
-        var entryCommand = territory == OccultNorthTerritory ? "/pdrfe ocn" : "/pdrfe ocs";
-        autoDigStatus = $"跨区 → {world}";
-        crossingDC    = true;
-        NotifyHelper.Instance().NotificationInfo($"自动跨区 → {world} ({crossDCReason})");
-
-
-        autoDigTask.Enqueue(() => SendCommand("/pdr leaveduty"));
-        autoDigTask.Enqueue(WaitZone(territory, false, 20000));
-        autoDigTask.DelayNext(3000);
-        autoDigTask.Enqueue(PlayerReady);
-
-
-        autoDigTask.Enqueue(() => SendCommand($"/pdr worldtravel {world}"));
-        autoDigTask.DelayNext(15000);
-        autoDigTask.Enqueue(PlayerReady);
-        autoDigTask.DelayNext(3000);
-
-
-        autoDigTask.Enqueue(() => SendCommand(entryCommand));
-        autoDigTask.Enqueue(WaitZone(territory, true, 60000));
-        autoDigTask.DelayNext(3000);
-
-        autoDigTask.Enqueue(() =>
-        {
-            crossingDC = false;
-            EndBocchiReturnSuppression();
-            BocchiOn();
-            FinishAutoDig();
-            return true;
-        });
-
-        return true;
-    }
-
-    private void StartCrossDCQuery(uint territory)
-    {
-        crossDCQuerying    = true;
-        crossDCTargetDC    = 0;
-        crossDCTargetWorld = string.Empty;
-        crossDCTargetTerritory = territory;
-        crossDCReason      = "查询中…";
-        _ = CrossDCQueryAsync(territory);
-    }
-
-
-    private Func<bool?> WaitCrossDCQuery(int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (deadline == 0) deadline = Environment.TickCount64 + timeoutMs;
-            if (!crossDCQuerying) return true;
-            if (Environment.TickCount64 >= deadline)
-            {
-                crossDCReason = "查询超时";
-                return true;
-            }
-            return false;
-        };
-    }
-
-    private async Task CrossDCQueryAsync(uint territory)
-    {
-        try
-        {
-            var currentDC           = CurrentDataCenter();
-            var (homeDC, homeWorld) = HomeInfo();
-            var json = await Client.GetStringAsync(
-                $"{TrackerBaseURL}{TrackerTable}?territory=eq.{territory}&datacenter=in.(101,102,103,104)&select=datacenter,pot_history,last_update&order=last_update.desc&limit=60");
-            var rows = JsonConvert.DeserializeObject<CrossDCRow[]>(json);
-            if (rows == null) { crossDCReason = "查询无数据(rows=null)"; return; }
-
-            var now  = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            var seen = new HashSet<ushort>();
-            var best = ((ushort)0, long.MaxValue);
-
-            foreach (var row in rows)
-            {
-                var dc = (ushort)row.Datacenter;
-                if (!CrossDCWorlds.ContainsKey(dc) || !seen.Add(dc)) continue;
-
-                var remaining = PredictRemaining(row.PotHistory, now);
-                if (remaining <= 300) continue;
-                if (remaining < best.Item2) best = (dc, remaining);
-            }
-
-            if (best.Item1 == 0)
-                crossDCReason = seen.Count == 0 ? "查询到 0 个大区数据" : $"各大区罐子均 ≤5 分钟(已查{seen.Count}区)";
-            else if (best.Item1 == currentDC)
-                crossDCReason = $"当前{currentDC}区罐子最近({best.Item2 / 60}分),留守不跨";
-            else
-            {
-                crossDCTargetDC    = best.Item1;
-
-                crossDCTargetWorld = best.Item1 == homeDC && !string.IsNullOrEmpty(homeWorld)
-                                         ? homeWorld
-                                         : CrossDCWorlds[best.Item1];
-                crossDCReason = $"→ {crossDCTargetWorld}({best.Item2 / 60}分)";
-            }
-        }
-        catch (Exception ex)
-        {
-            crossDCReason = $"查询异常: {ex.GetType().Name}";
-        }
-        finally
-        {
-            crossDCQuerying = false;
-        }
-    }
-
-    private static long PredictRemaining(string potHistory, long now)
-    {
-        if (string.IsNullOrEmpty(potHistory)) return long.MaxValue;
-
-        SharedPot[]? pots;
-        try   { pots = JsonConvert.DeserializeObject<SharedPot[]>(potHistory); }
-        catch { return long.MaxValue; }
-        if (pots == null) return long.MaxValue;
-
-        long lastSpawn = -1;
-        foreach (var pot in pots)
-            if (pot.SpawnTime > lastSpawn) lastSpawn = pot.SpawnTime;
-        if (lastSpawn <= 0) return long.MaxValue;
-
-        return lastSpawn + Respawn - now;
-    }
-
-    private static ushort CurrentDataCenter() =>
-        DService.Instance().ObjectTable.LocalPlayer is { } localPlayer
-            ? (ushort)localPlayer.CurrentWorld.Value.DataCenter.RowId
-            : (ushort)0;
-
-
-    private static (ushort DC, string World) HomeInfo()
-    {
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return (0, string.Empty);
-        var home = localPlayer.HomeWorld.Value;
-        return ((ushort)home.DataCenter.RowId, home.Name.ExtractText());
-    }
-
-    private static readonly Dictionary<ushort, string> CrossDCWorlds = new()
-    {
-        [101] = "晨曦王座",
-        [102] = "白金幻象",
-        [103] = "紫水栈桥",
-        [104] = "红茶川"
-    };
-
-    private class CrossDCRow
-    {
-        [JsonProperty("datacenter")]
-        public int Datacenter { get; set; }
-
-        [JsonProperty("pot_history")]
-        public string PotHistory = string.Empty;
-    }
-
-    private static bool SendCommand(string command)
-    {
-        ChatManager.Instance().SendMessage(command);
-        return true;
-    }
-
-    private static void Speak(string text)
-    {
-        var normalized = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        if (normalized.Length == 0) return;
-
-        ChatManager.Instance().SendMessage($"/edgetts speak {normalized}");
-    }
-
-
-    private static bool BocchiOn()
-    {
-        SendCommand("/bocchiillegal on");
-        return true;
-    }
-
-
-    private static bool EmergencyStopBocchi()
-    {
-        if (BocchiAutomator.TryEmergencyStop()) return true;
-
-        SendCommand("/bocchiillegal off");
-        return false;
-    }
-
-    private static bool PlayerReady()
-    {
-        var localPlayer = DService.Instance().ObjectTable.LocalPlayer;
-        return localPlayer is { IsDead: false } && !DService.Instance().Condition[ConditionFlag.BetweenAreas];
-    }
-
-    private static unsafe void ClearCurrentTarget()
-    {
-        var targetSystem = TargetSystem.Instance();
-        if (targetSystem != null)
-            targetSystem->Target = null;
-    }
-
-
-    private static Func<bool?> WaitBocchiCombat(Pot target, int retryMs)
-    {
-        long nextRetryAt      = 0;
-        long reenableAt       = 0;
-        bool restartAttempted = false;
-
-        return () =>
-        {
-            if (!target.Alive) return true;
-
-            var now = Environment.TickCount64;
-
-            if (reenableAt > 0)
-            {
-                if (now < reenableAt) return false;
-
-                ClearCurrentTarget();
-                BocchiOn();
-                reenableAt = 0;
-            }
-
-            if (DService.Instance().Condition[ConditionFlag.InCombat]) return true;
-            if (nextRetryAt == 0) nextRetryAt = now + retryMs;
-
-            if (!restartAttempted && now >= nextRetryAt)
-            {
-                SendCommand("/bocchiillegal off");
-                restartAttempted = true;
-                reenableAt       = now + 700;
-            }
-
-            return false;
-        };
-    }
-
-
-    private static void UseReturn() =>
-        ChatManager.Instance().SendMessage("/return");
-
-
-    private static unsafe void UseLureItem() =>
-        AgentInventoryContext.Instance()->UseItem(LureItemID, InventoryType.KeyItems);
-
-
-    private unsafe void UseLureForDirection()
-    {
-        if (undergroundDangerActive)
-        {
-            FailAutoDigMovement("仍处于遁地状态，已停止使用圣灵药以避免下坐骑");
-            return;
-        }
-
-        digDirection      = string.Empty;
-        awaitingDirection = true;
-
-        UseLureItem();
-    }
-
-
-    private void EnqueuePtp(Pot target)
-    {
-        if (autoDigTask == null) return;
-
-        if (target.TerritoryID == OccultNorthTerritory && GetNearestNorthAetheryte(target.World) is { } northAetheryte)
-        {
-            EnqueueNorthAetheryteTravel(northAetheryte);
-            return;
-        }
-
-        var aetheryteName = target.AetheryteData?.Name ?? target.Aetheryte;
-        if (string.IsNullOrWhiteSpace(aetheryteName)) return;
-
-        autoDigTask.Enqueue(() => SendCommand($"/pdr ptp {aetheryteName}"));
-        autoDigTask.DelayNext(1000);
-        autoDigTask.Enqueue(WaitArrive(target.AetherytePos, 50f, 20000));
-    }
-
-    private void EnqueueNorthAetheryteTravel(CrescentAetheryte aetheryte)
-    {
-        if (autoDigTask == null) return;
-
-        var directStarted      = false;
-        var directRoadFound    = false;
-        var directRoadPosition = Vector3.Zero;
-        var directRoadReady    = false;
-        var needsBaseApproach  = false;
-        var baseRoadFound      = false;
-        var baseRoadPosition   = Vector3.Zero;
-        var baseRoadReady      = false;
-        var baseTeleportStarted = false;
-        var basePosition         = CrescentAetheryte.NorthHornBaseCamp.Position;
-
-
-        autoDigTask.Enqueue(WaitDismounted(5000));
-        autoDigTask.Enqueue(() =>
-        {
-            if (Arrived(aetheryte.Position, 50f)) return true;
-
-            autoDigStatus = $"前往{autoDigTarget?.DirName ?? string.Empty}罐：传送至{aetheryte.Name}";
-            directStarted = TryNativeAethernetTeleport(aetheryte);
-            if (!directStarted && TryGetNearbyAethernetPosition(out directRoadPosition))
-            {
-                directRoadFound = true;
-                VnavMoveTo(directRoadPosition);
-            }
-            return true;
-        });
-        autoDigTask.Enqueue(WaitAethernetInteractionRangeWhen(
-            () => !directStarted && directRoadFound,
-            () => directRoadPosition,
-            10000));
-        autoDigTask.Enqueue(() =>
-        {
-            if (!directStarted && directRoadFound)
-            {
-                VnavStop();
-                directRoadReady = InAethernetInteractionRange(directRoadPosition);
-                if (directRoadReady)
-                    directStarted = TryNativeAethernetTeleport(aetheryte);
-            }
-            return true;
-        });
-        autoDigTask.Enqueue(WaitArriveWhen(() => directStarted, () => aetheryte.Position, 50f, 10000));
-        autoDigTask.Enqueue(() =>
-        {
-            needsBaseApproach = !Arrived(aetheryte.Position, 50f);
-            if (needsBaseApproach) UseReturn();
-            return true;
-        });
-        autoDigTask.Enqueue(WaitDelayWhen(() => needsBaseApproach, 6000));
-        autoDigTask.Enqueue(() => !needsBaseApproach || PlayerReady());
-        autoDigTask.Enqueue(() =>
-        {
-            if (needsBaseApproach) VnavMoveTo(basePosition);
-            return true;
-        });
-        autoDigTask.Enqueue(WaitArriveWhen(() => needsBaseApproach, () => basePosition, 3f, 20000));
-        autoDigTask.Enqueue(() =>
-        {
-            if (needsBaseApproach) VnavStop();
-            return true;
-        });
-        autoDigTask.Enqueue(WaitFindNearbyAethernetWhen(
-            () => needsBaseApproach,
-            position =>
-            {
-                baseRoadFound    = true;
-                baseRoadPosition = position;
-                VnavMoveTo(position);
-            },
-            5000));
-        autoDigTask.Enqueue(WaitAethernetInteractionRangeWhen(
-            () => needsBaseApproach && baseRoadFound,
-            () => baseRoadPosition,
-            20000));
-        autoDigTask.Enqueue(() =>
-        {
-            if (!needsBaseApproach) return true;
-
-            VnavStop();
-            baseRoadReady = baseRoadFound && InAethernetInteractionRange(baseRoadPosition);
-            if (baseRoadReady)
-            {
-                baseTeleportStarted = TryNativeAethernetTeleport(aetheryte);
-                if (!baseTeleportStarted)
-                    baseTeleportStarted = TryLifestreamAethernetTeleport(aetheryte.DataID);
-            }
-
-            if (!baseTeleportStarted)
-                NotifyHelper.Instance().NotificationWarning($"未能启动前往{aetheryte.Name}的魔路传送，将直接寻路到罐点");
-            return true;
-        });
-        autoDigTask.Enqueue(WaitArriveWhen(
-            () => needsBaseApproach && baseTeleportStarted,
-            () => aetheryte.Position,
-            50f,
-            20000));
-    }
-
-    private static CrescentAetheryte? GetNearestNorthAetheryte(Vector3 destination)
-    {
-        CrescentAetheryte? nearest = null;
-        var nearestDistance = float.MaxValue;
-
-        foreach (var candidate in CrescentAetheryte.NorthHornAetherytes)
-        {
-            var distance = Vector3.DistanceSquared(candidate.Position, destination);
-            if (distance >= nearestDistance) continue;
-
-            nearest         = candidate;
-            nearestDistance = distance;
-        }
-
-        return nearest;
-    }
-
-    private static unsafe bool TryGetNearbyAethernetPosition(out Vector3 position)
-    {
-        position = Vector3.Zero;
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return false;
-
-        if (TryGetNearbyAethernetObject(out _, out position))
-            return true;
-
-        var eventFramework = EventFramework.Instance();
-        if (eventFramework != null &&
-            eventFramework->TryGetNearestEvent(
-                x => x.EventId.ContentId == EventHandlerContent.CustomTalk,
-                x => x.NameString.Equals(LuminaWrapper.GetEObjName(2006473), StringComparison.OrdinalIgnoreCase) ||
-                     x.NameString.Equals(LuminaWrapper.GetEObjName(2014664), StringComparison.OrdinalIgnoreCase),
-                localPlayer.Position,
-                out _,
-                out var eventObjectID) &&
-            DService.Instance().ObjectTable.SearchByID(eventObjectID) is { } targetObject &&
-            LocalPlayerState.DistanceTo3DSquared(targetObject.Position) <= 100f * 100f)
-        {
-            position = targetObject.Position;
-            return true;
-        }
-
-        // North Horn crystals are not always exposed through the same CustomTalk event/name as South Horn.
-        // Fall back to Lifestream's interaction coordinates instead of the OmenTools teleport landing points.
-        return TryGetKnownNearbyAethernetPosition(localPlayer.Position, out position);
-    }
-
-    private static bool TryGetKnownNearbyAethernetPosition(Vector3 playerPosition, out Vector3 position)
-    {
-        position = Vector3.Zero;
-        var candidates = GameState.TerritoryType == OccultTerritory
-                             ? CrescentAetheryte.SouthHornAetherytes
-                             : GameState.TerritoryType == OccultNorthTerritory
-                                 ? CrescentAetheryte.NorthHornAetherytes
-                                 : null;
-        if (candidates == null) return false;
-
-        var nearestDistance = 100f * 100f;
-        foreach (var candidate in candidates)
-        {
-            if (!TryGetAethernetInteractionPosition(candidate, out var interactionPosition)) continue;
-
-            var deltaX   = playerPosition.X - interactionPosition.X;
-            var deltaZ   = playerPosition.Z - interactionPosition.Z;
-            var distance = (deltaX * deltaX) + (deltaZ * deltaZ);
-            if (distance >= nearestDistance) continue;
-
-            nearestDistance = distance;
-            position        = interactionPosition;
-        }
-
-        return position != Vector3.Zero;
-    }
-
-    private static bool TryGetAethernetInteractionPosition(CrescentAetheryte aetheryte, out Vector3 position)
-    {
-        var interactionXZ = aetheryte.DataID switch
-        {
-            4927 => new Vector2(830.7f, -696.0f),
-            4928 => new Vector2(-173.0f, -611.1f),
-            4929 => new Vector2(-358.1f, -121.0f),
-            4930 => new Vector2(306.9f, 305.7f),
-            4947 => new Vector2(-384.1f, 281.4f),
-            5571 => new Vector2(880.0f, 880.1f),
-            5572 => new Vector2(357.7f, -554.3f),
-            5573 => new Vector2(-547.2f, 594.4f),
-            5574 => new Vector2(-388.6f, -440.5f),
-            5575 => new Vector2(-13.7f, -40.5f),
-            5576 => new Vector2(451.7f, 528.8f),
-            _    => default
-        };
-
-        if (interactionXZ == default)
-        {
-            position = Vector3.Zero;
-            return false;
-        }
-
-        position = new(interactionXZ.X, aetheryte.Position.Y, interactionXZ.Y);
-        return true;
-    }
-
-    private static unsafe Func<bool?> WaitFindNearbyAethernetWhen(
-        Func<bool> enabled,
-        Action<Vector3> onFound,
-        int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (!enabled()) return true;
-
-            var now = Environment.TickCount64;
-            if (deadline == 0) deadline = now + timeoutMs;
-            if (TryGetNearbyAethernetPosition(out var position))
-            {
-                onFound(position);
-                return true;
-            }
-
-            return now >= deadline;
-        };
-    }
-
-    private static Func<bool?> WaitAethernetInteractionRangeWhen(
-        Func<bool> enabled,
-        Func<Vector3> position,
-        int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (!enabled()) return true;
-
-            var now = Environment.TickCount64;
-            if (deadline == 0) deadline = now + timeoutMs;
-            return InAethernetInteractionRange(position()) || now >= deadline;
-        };
-    }
-
-    private static unsafe Func<bool?> WaitAethernetMenuOpenWhen(Func<bool> enabled, int timeoutMs)
-    {
-        long deadline       = 0;
-        long nextInteractAt = 0;
-
-        return () =>
-        {
-            if (!enabled()) return true;
-
-            var agent = AgentTelepotTown.Instance();
-            if (agent != null && agent->IsAgentActive()) return true;
-
-            var now = Environment.TickCount64;
-            if (deadline == 0) deadline = now + timeoutMs;
-            if (now >= nextInteractAt)
-            {
-                TryInteractWithNearbyAethernet();
-                nextInteractAt = now + 800;
-            }
-
-            return now >= deadline;
-        };
-    }
-
-    private static bool InAethernetInteractionRange(Vector3 position)
-    {
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return false;
-        return Vector3.DistanceSquared(localPlayer.Position, position) <=
-               AethernetInteractionDistance * AethernetInteractionDistance;
-    }
-
-    private static unsafe bool TryGetNearbyAethernetObject(out nint address, out Vector3 position)
-    {
-        address  = 0;
-        position = Vector3.Zero;
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return false;
-
-        var roadName       = LuminaWrapper.GetEObjName(2006473);
-        var occultRoadName = LuminaWrapper.GetEObjName(2014664);
-        var shardName      = LuminaWrapper.GetEObjName(2014665);
-        var bestDistance   = 100f * 100f;
-
-        foreach (var obj in DService.Instance().ObjectTable)
-        {
-            if (!obj.IsTargetable || obj.Address == 0) continue;
-
-            var gameObject = (GameObject*)obj.Address;
-            var name       = obj.Name.ToString();
-            var isRoad     = gameObject != null && gameObject->ObjectKind == ObjectKind.Aetheryte ||
-                             name.Equals(roadName, StringComparison.OrdinalIgnoreCase) ||
-                             name.Equals(occultRoadName, StringComparison.OrdinalIgnoreCase) ||
-                             name.Equals(shardName, StringComparison.OrdinalIgnoreCase);
-            if (!isRoad) continue;
-
-            var distance = Vector3.DistanceSquared(localPlayer.Position, obj.Position);
-            if (distance >= bestDistance) continue;
-
-            bestDistance = distance;
-            address      = obj.Address;
-            position     = obj.Position;
-        }
-
-        return address != 0;
-    }
-
-    private static unsafe bool TryInteractWithNearbyAethernet()
-    {
-        var targetSystem = TargetSystem.Instance();
-        if (targetSystem == null ||
-            !TryGetNearbyAethernetObject(out var address, out var position) ||
-            !InAethernetInteractionRange(position))
-            return false;
-
-        var gameObject = (GameObject*)address;
-        if (gameObject == null) return false;
-
-        targetSystem->Target = gameObject;
-        targetSystem->InteractWithObject(gameObject, false);
-        return true;
-    }
-
-    private static unsafe bool TryNativeAethernetTeleport(CrescentAetheryte aetheryte)
-    {
-        if (aetheryte.TeleportTo()) return true;
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return false;
-
-        var eventFramework = EventFramework.Instance();
-        if (eventFramework == null ||
-            !eventFramework->TryGetNearestEvent(
-                x => x.EventId.ContentId == EventHandlerContent.CustomTalk,
-                x => x.NameString.Equals(LuminaWrapper.GetEObjName(2006473), StringComparison.OrdinalIgnoreCase) ||
-                     x.NameString.Equals(LuminaWrapper.GetEObjName(2014664), StringComparison.OrdinalIgnoreCase),
-                localPlayer.Position,
-                out var eventID,
-                out var eventObjectID) ||
-            DService.Instance().ObjectTable.SearchByID(eventObjectID) is not { } targetObject ||
-            LocalPlayerState.DistanceTo3DSquared(targetObject.Position) > 16f)
-            return false;
-
-        new EventStartPackt(eventObjectID, eventID).Send();
-        new EventCompletePackt(721820, 16777216, aetheryte.DataID).Send();
-        return true;
-    }
-
-    private static unsafe bool TryAethernetTeleportFromOpenMenu(CrescentAetheryte aetheryte)
-    {
-        var agent = AgentTelepotTown.Instance();
-        return agent != null && agent->IsAgentActive() && aetheryte.TeleportTo();
-    }
-
-    private static bool TryLifestreamAethernetTeleport(uint placeNameID)
-    {
-        try
-        {
-            return DService.Instance().PI
-                           .GetIpcSubscriber<uint, bool>("Lifestream.AethernetTeleportByPlaceNameId")
-                           .InvokeFunc(placeNameID);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static uint GetLifestreamActiveCustomAetheryte()
-    {
-        try
-        {
-            return DService.Instance().PI
-                           .GetIpcSubscriber<uint>("Lifestream.GetActiveCustomAetheryte")
-                           .InvokeFunc();
-        }
-        catch
-        {
-            return 0;
-        }
-    }
-
-
-    private void EnqueueMoveTo(Vector3 position, float tolerance, bool mount = true, int timeoutMs = 90000)
-    {
-        if (autoDigTask == null) return;
-
-        if (mount)
-            autoDigTask.Enqueue(WaitMounted());
-
-        autoDigTask.Enqueue(() => { VnavMoveTo(position); return true; });
-        autoDigTask.Enqueue(WaitArrive(position, tolerance, timeoutMs));
-        autoDigTask.Enqueue(() => { VnavStop(); return true; });
-    }
-
-    private void EnqueueUndergroundMoveTo(Vector3 position, float tolerance, int timeoutMs = 90000)
-    {
-        if (autoDigTask == null) return;
-
-        autoDigTask.Enqueue(WaitMounted());
-        autoDigTask.Enqueue(() =>
-        {
-            if (!DService.Instance().Condition[ConditionFlag.Mounted])
-                return FailAutoDigMovement("未能确认坐骑状态，已停止遁地移动");
-
-            if (!undergroundDangerActive)
-                DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Enter underground danger route: {position.X:F2}, {position.Y:F2}, {position.Z:F2}");
-            BeginUndergroundDangerMode();
-            return true;
-        });
-        autoDigTask.Enqueue(WaitUndergroundArrive(position, tolerance, timeoutMs));
-    }
-
-    private unsafe void EnqueueReturnToSurface(Vector3 position)
-    {
-        if (autoDigTask == null) return;
-
-        long deadline = 0;
-        float startPacketHeight = 0;
-        autoDigTask.Enqueue(() =>
-        {
-            if (!undergroundDangerActive) return true;
-            if (!DService.Instance().Condition[ConditionFlag.Mounted] ||
-                DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false } localPlayer)
-                return FailAutoDigMovement("未能保持坐骑状态，已停止遁地寻宝");
-
-            var now = Environment.TickCount64;
-            if (deadline == 0)
-            {
-                deadline          = now + UndergroundReturnTimeoutMS;
-                startPacketHeight = undergroundPacketHeight ?? GetUndergroundHeight(position);
-                VnavStop();
-                autoDigStatus = "危险区：平滑返回地表";
-                DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Smooth surface return started: Y={startPacketHeight:F2} -> {position.Y:F2}; " +
-                    $"depth={position.Y - startPacketHeight:F2}");
-            }
-
-            if (now >= deadline)
-                return FailAutoDigMovement("平滑返回地表超时，已停止遁地寻宝");
-
-            if (!TryBeginUndergroundPositionUpdate(UndergroundReturnSpeed, out var maxStep))
-                return false;
-
-            maxStep = MathF.Min(maxStep, UndergroundReturnMaxStep);
-            var currentPacketHeight = undergroundPacketHeight ?? startPacketHeight;
-            var remainingHeight     = position.Y - currentPacketHeight;
-
-            var step = MathF.Min(MathF.Abs(remainingHeight), maxStep);
-            var nextPacketHeight = currentPacketHeight + MathF.CopySign(step, remainingHeight);
-            if (MathF.Abs(remainingHeight) <= UndergroundReturnTolerance || step >= MathF.Abs(remainingHeight))
-                nextPacketHeight = position.Y;
-
-            allowUndergroundPositionUpdate = true;
-            try
-            {
-                ((GameObject*)localPlayer.Address)->SetPosition(position.X, position.Y, position.Z);
-                new PositionUpdateInstancePacket(
-                    localPlayer.Rotation,
-                    new Vector3(position.X, nextPacketHeight, position.Z),
-                    PositionUpdateInstancePacket.MoveType.NormalMove0).Send();
-                undergroundPacketHeight  = nextPacketHeight;
-                undergroundSurfaceHeight = position.Y;
-            }
-            catch
-            {
-                return FailAutoDigMovement("恢复地表位置失败，已停止遁地寻宝");
-            }
-            finally
-            {
-                allowUndergroundPositionUpdate = false;
-            }
-
-            if (nextPacketHeight != position.Y) return false;
-
-            EndUndergroundDangerMode();
-            DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Smooth surface return completed: {position.X:F2}, {position.Y:F2}, {position.Z:F2}");
-            return true;
-        });
-    }
-
-    private unsafe Func<bool?> WaitUndergroundArrive(Vector3 position, float tolerance, int timeoutMs)
-    {
-        long deadline        = 0;
-        long settleAfter     = 0;
-        long nextMountTry    = 0;
-        long remountDeadline = 0;
-        return () =>
-        {
-            var now = Environment.TickCount64;
-            if (deadline == 0)
-            {
-                deadline = now + timeoutMs;
-                settleAfter = now + UndergroundSettleMS;
-                VnavStop();
-            }
-
-            if (!InOccultMapZone || DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false })
-                return FailAutoDigMovement("角色状态异常，已停止遁地移动");
-
-
-            if (!DService.Instance().Condition[ConditionFlag.Mounted])
-            {
-                VnavStop();
-                autoDigStatus = "危险区：重新上坐骑";
-                if (remountDeadline == 0) remountDeadline = now + MountTimeoutMS;
-                if (now >= remountDeadline)
-                    return FailAutoDigMovement("遁地移动途中无法重新上坐骑，已安全停止");
-
-                var condition = DService.Instance().Condition;
-                if (!condition.IsCasting &&
-                    !condition[ConditionFlag.BetweenAreas] &&
-                    !condition[ConditionFlag.OccupiedInQuestEvent] &&
-                    now >= nextMountTry)
-                {
-                    Mount();
-                    nextMountTry = now + 1500;
-                }
-                return false;
-            }
-
-            if (remountDeadline != 0)
-            {
-                deadline        = now + timeoutMs;
-                settleAfter     = now + UndergroundSettleMS;
-                remountDeadline = 0;
-            }
-
-            autoDigStatus = "危险区：遁地移动";
-            try
-            {
-                MoveUndergroundTo(position);
-            }
-            catch
-            {
-                return FailAutoDigMovement("遁地移动执行异常，已恢复并停止自动挖罐");
-            }
-
-
-
-            if (now >= settleAfter && UndergroundArrived(position, tolerance)) return true;
-            if (now >= deadline)
-                return FailAutoDigMovement("遁地移动超时，未到达目标点，已安全停止");
-
-            return false;
-        };
-    }
-
-    private unsafe void BeginUndergroundDangerMode()
-    {
-        undergroundDangerActive = true;
-        undergroundPacketHeight = null;
-        undergroundSurfaceHeight = null;
-        undergroundLastPositionUpdateAt = 0;
-        autoDigStatus = "危险区：遁地移动";
-        var playerController = PlayerController.Instance();
-        if (playerController != null)
-            playerController->MoveControllerWalk.IsMovementInputLocked = true;
-    }
-
-    private unsafe void EndUndergroundDangerMode()
-    {
-        if (undergroundDangerActive)
-            DService.Instance().Log.Information("[OccultPotNotifier] Leave underground danger route");
-        undergroundDangerActive = false;
-        allowUndergroundPositionUpdate = false;
-        undergroundPacketHeight = null;
-        undergroundSurfaceHeight = null;
-        undergroundLastPositionUpdateAt = 0;
-        var playerController = PlayerController.Instance();
-        if (playerController != null)
-            playerController->MoveControllerWalk.IsMovementInputLocked = false;
-    }
-
-    private static float GetUndergroundHeight(Vector3 surfacePosition) =>
-        MathF.Max(surfacePosition.Y - UndergroundDepth, UndergroundMinHeight);
-
-    private bool UndergroundArrived(Vector3 position, float tolerance)
-    {
-        if (!Arrived(position, tolerance) || undergroundPacketHeight is not { } packetHeight)
-            return false;
-
-        return MathF.Abs(packetHeight - GetUndergroundHeight(position)) <= UndergroundReturnTolerance;
-    }
-
-    private bool TryBeginUndergroundPositionUpdate(float speed, out float step)
-    {
-        var now = Environment.TickCount64;
-        var elapsedMs = undergroundLastPositionUpdateAt == 0
-                            ? UndergroundPositionUpdateIntervalMS
-                            : now - undergroundLastPositionUpdateAt;
-        if (elapsedMs < UndergroundPositionUpdateIntervalMS)
-        {
-            step = 0f;
-            return false;
-        }
-
-        undergroundLastPositionUpdateAt = now;
-        elapsedMs = Math.Min(elapsedMs, UndergroundPositionUpdateMaxElapsedMS);
-        step = speed * elapsedMs / 1000f;
-        return step > 0f;
-    }
-
-    private unsafe void MoveUndergroundTo(Vector3 position)
-    {
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer)
-            return;
-
-        if (!TryBeginUndergroundPositionUpdate(UndergroundMoveSpeed, out var step))
-            return;
-
-        var playerController = PlayerController.Instance();
-        if (playerController != null && playerController->MoveState == 3)
-            playerController->MoveState = 1;
-
-        var current = localPlayer.Position;
-        var horizontalDelta = new Vector3(position.X, current.Y, position.Z) - current;
-        var distance = horizontalDelta.Length();
-        var reachedTarget = distance < 0.1f || step >= distance;
-        var next = reachedTarget
-                       ? new Vector3(position.X, current.Y, position.Z)
-                       : current + (horizontalDelta / distance * step);
-
-        if (reachedTarget)
-            undergroundSurfaceHeight = position.Y;
-        else if (RaycastHelper.TryGetGroundHit(next, out var groundHit))
-            undergroundSurfaceHeight = groundHit.Point.Y;
-        else if (undergroundSurfaceHeight == null)
-            undergroundSurfaceHeight = current.Y;
-
-        var surfaceHeight = undergroundSurfaceHeight ?? position.Y;
-        var targetPacketHeight = GetUndergroundHeight(new Vector3(next.X, surfaceHeight, next.Z));
-        var currentPacketHeight = undergroundPacketHeight ?? targetPacketHeight;
-        var packetHeightDelta = targetPacketHeight - currentPacketHeight;
-        var nextPacketHeight = MathF.Abs(packetHeightDelta) <= step
-                                   ? targetPacketHeight
-                                   : currentPacketHeight + MathF.CopySign(step, packetHeightDelta);
-        undergroundPacketHeight = nextPacketHeight;
-
-        var localPosition = new Vector3(next.X, nextPacketHeight + UndergroundDepth, next.Z);
-        var packetPosition = new Vector3(next.X, nextPacketHeight, next.Z);
-
-        ((GameObject*)localPlayer.Address)->SetPosition(localPosition.X, localPosition.Y, localPosition.Z);
-        new PositionUpdateInstancePacket(
-            localPlayer.Rotation,
-            packetPosition,
-            PositionUpdateInstancePacket.MoveType.NormalMove0).Send();
-    }
-
-    private void OnUndergroundTestCommand(string command, string args)
-    {
-        var arg = args.Trim().ToLowerInvariant();
-        if (arg is not ("" or "on" or "off" or "toggle"))
-        {
-            NotifyHelper.Instance().NotificationInfo(
-                $"测试指令：/ktb {UndergroundTestCommand} [on|off]");
-            return;
-        }
-
-        var shouldStop = arg == "off" || undergroundTestActive && arg != "on";
-        if (shouldStop)
-        {
-            if (undergroundTestActive)
-                RequestUndergroundTestStop();
-            else
-                NotifyHelper.Instance().NotificationInfo("遁地测试当前未开启");
-            return;
-        }
-
-        if (undergroundTestActive)
-        {
-            NotifyHelper.Instance().NotificationInfo("遁地测试已开启；使用 off 或再次执行指令退出");
-            return;
-        }
-
-        StartUndergroundTest();
-    }
-
-    private void StartUndergroundTest()
-    {
-        var localPlayer = DService.Instance().ObjectTable.LocalPlayer;
-        var condition   = DService.Instance().Condition;
-        if (!InOccultMapZone || InForkedTower || localPlayer is not { IsDead: false })
-        {
-            NotifyHelper.Instance().NotificationWarning("遁地测试只能由存活角色在新月岛野外使用");
-            return;
-        }
-
-        if (autoDigActive || cofferHuntActive || standbyDeathReturning || crossingDC || undergroundDangerActive ||
-            condition[ConditionFlag.InCombat] || condition[ConditionFlag.BetweenAreas] ||
-            condition[ConditionFlag.OccupiedInQuestEvent] ||
-            InOrSettlingFateOrCriticalEngagement(localPlayer) ||
-            BocchiAutomator.IsTravellingToFateOrCriticalEncounter())
-        {
-            NotifyHelper.Instance().NotificationWarning("当前有战斗、寻路或挖罐流程，不能开始遁地测试");
-            return;
-        }
-
-        if (undergroundTestTask == null) return;
-
-        undergroundTestActive          = true;
-        undergroundTestMovementReady   = false;
-        undergroundTestMoveOutward     = true;
-        undergroundTestStopRequested   = false;
-        undergroundTestSurfacePosition = localPlayer.Position;
-        undergroundTestOuterPosition   = Vector3.Zero;
-        undergroundTestTerritory       = GameState.TerritoryType;
-        undergroundTestNextMoveAt      = 0;
-        undergroundTestStopDeadline    = 0;
-        undergroundTestTask.Abort();
-        FrameworkManager.Instance().Reg(OnUndergroundTestSafety, 50);
-
-        undergroundTestTask.Enqueue(WaitUndergroundTestMounted());
-        undergroundTestTask.Enqueue(() =>
-        {
-            if (!undergroundTestActive) return true;
-            if (DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false } player ||
-                !DService.Instance().Condition[ConditionFlag.Mounted])
-                return FailUndergroundTest("角色或坐骑状态异常，遁地测试已取消");
-
-            undergroundTestSurfacePosition = player.Position;
-            DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Enter underground test: {player.Position.X:F2}, {player.Position.Y:F2}, {player.Position.Z:F2}");
-            BeginUndergroundDangerMode();
-            return true;
-        });
-        undergroundTestTask.Enqueue(WaitUndergroundTestSettled());
-        undergroundTestTask.Enqueue(() =>
-        {
-            if (!undergroundTestActive) return true;
-
-            if (DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false } player)
-                return FailUndergroundTest("角色状态异常，遁地移动测试已取消");
-
-            var forward = new Vector3(MathF.Sin(player.Rotation), 0, MathF.Cos(player.Rotation));
-            undergroundTestOuterPosition = undergroundTestSurfacePosition +
-                                           (forward * UndergroundTestMoveDistance);
-            undergroundTestMoveOutward   = true;
-            undergroundTestNextMoveAt    = Environment.TickCount64 + 1_500;
-            undergroundTestMovementReady = true;
-            var undergroundHeight = GetUndergroundHeight(player.Position);
-            NotifyHelper.Instance().NotificationInfo(
-                $"遁地测试已进入 Y={undergroundHeight:F0}；将沿面向往返 {UndergroundTestMoveDistance:F0} 米，再次执行指令退出");
-            return true;
-        });
-
-        NotifyHelper.Instance().NotificationInfo("遁地测试准备中：正在确认坐骑状态");
-    }
-
-    private Func<bool?> WaitUndergroundTestMounted()
-    {
-        long deadline = 0;
-        long nextTry  = 0;
-        return () =>
-        {
-            if (!undergroundTestActive) return true;
-
-            var now = Environment.TickCount64;
-            if (DService.Instance().Condition[ConditionFlag.Mounted]) return true;
-            if (deadline == 0) deadline = now + MountTimeoutMS;
-            if (now >= deadline)
-                return FailUndergroundTest("无法上坐骑，遁地测试已取消");
-
-            if (!InOccultMapZone || DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false })
-                return FailUndergroundTest("角色状态异常，遁地测试已取消");
-
-            var condition = DService.Instance().Condition;
-            if (!condition.IsCasting &&
-                !condition[ConditionFlag.InCombat] &&
-                !condition[ConditionFlag.BetweenAreas] &&
-                !condition[ConditionFlag.OccupiedInQuestEvent] &&
-                now >= nextTry)
-            {
-                Mount();
-                nextTry = now + 1500;
-            }
-            return false;
-        };
-    }
-
-    private Func<bool?> WaitUndergroundTestSettled()
-    {
-        long settleAfter = 0;
-        return () =>
-        {
-            if (!undergroundTestActive) return true;
-            if (!InOccultMapZone || DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false } ||
-                !DService.Instance().Condition[ConditionFlag.Mounted])
-                return FailUndergroundTest("角色或坐骑状态异常，遁地测试已安全停止");
-
-            var now = Environment.TickCount64;
-            if (settleAfter == 0) settleAfter = now + UndergroundSettleMS;
-
-            try
-            {
-                MoveUndergroundTo(undergroundTestSurfacePosition);
-            }
-            catch
-            {
-                return FailUndergroundTest("遁地位置更新异常，测试已安全停止");
-            }
-
-            return now >= settleAfter;
-        };
-    }
-
-    private void OnUndergroundTestSafety(IFramework _)
-    {
-        if (!undergroundTestActive)
-        {
-            FrameworkManager.Instance().Unreg(OnUndergroundTestSafety);
-            return;
-        }
-
-        var localPlayer = DService.Instance().ObjectTable.LocalPlayer;
-        if (!InOccultMapZone || InForkedTower || GameState.TerritoryType != undergroundTestTerritory ||
-            autoDigActive || cofferHuntActive ||
-            localPlayer is not { IsDead: false } ||
-            DService.Instance().Condition[ConditionFlag.InCombat] ||
-            DService.Instance().Condition[ConditionFlag.BetweenAreas] ||
-            InOrSettlingFateOrCriticalEngagement(localPlayer) ||
-            BocchiAutomator.IsTravellingToFateOrCriticalEncounter())
-        {
-            FailUndergroundTest("角色状态或区域已变化，遁地测试已安全停止");
-            return;
-        }
-
-        if (undergroundDangerActive && !DService.Instance().Condition[ConditionFlag.Mounted])
-        {
-            FailUndergroundTest("测试中失去坐骑状态，已立即恢复地表位置");
-            return;
-        }
-
-        if (!undergroundDangerActive || !undergroundTestMovementReady) return;
-
-        var now = Environment.TickCount64;
-        if (undergroundTestStopRequested && now >= undergroundTestStopDeadline)
-        {
-            FailUndergroundTest("返回测试起点超时，已在当前位置恢复地表");
-            return;
-        }
-
-        var target = undergroundTestStopRequested || !undergroundTestMoveOutward
-                         ? undergroundTestSurfacePosition
-                         : undergroundTestOuterPosition;
-        if (Arrived(target, UndergroundTestMoveTolerance))
-        {
-            if (undergroundTestStopRequested)
-            {
-                StopUndergroundTest(true);
-                return;
-            }
-
-            undergroundTestMoveOutward = !undergroundTestMoveOutward;
-            undergroundTestNextMoveAt  = now + UndergroundTestEndpointPauseMS;
-            return;
-        }
-
-        if (now < undergroundTestNextMoveAt) return;
-
-        try
-        {
-            MoveUndergroundTo(target);
-        }
-        catch
-        {
-            FailUndergroundTest("遁地往返移动异常，测试已安全停止");
-        }
-    }
-
-    private void RequestUndergroundTestStop()
-    {
-        if (!undergroundDangerActive || !undergroundTestMovementReady ||
-            !DService.Instance().Condition[ConditionFlag.Mounted])
-        {
-            StopUndergroundTest(true);
-            return;
-        }
-
-        if (undergroundTestStopRequested)
-        {
-            NotifyHelper.Instance().NotificationInfo("遁地测试正在返回起点");
-            return;
-        }
-
-        undergroundTestStopRequested = true;
-        undergroundTestNextMoveAt    = 0;
-        undergroundTestStopDeadline  = Environment.TickCount64 + UndergroundTestStopTimeoutMS;
-        NotifyHelper.Instance().NotificationInfo("遁地测试正在地下返回起点，随后恢复地表位置");
-    }
-
-    private bool FailUndergroundTest(string message)
-    {
-        DService.Instance().Log.Warning($"[OccultPotNotifier] {message}");
-        StopUndergroundTest(false);
-        NotifyHelper.Instance().NotificationWarning(message);
-        return true;
-    }
-
-    private unsafe void StopUndergroundTest(bool notify)
-    {
-        if (!undergroundTestActive) return;
-
-        undergroundTestTask?.Abort();
-        FrameworkManager.Instance().Unreg(OnUndergroundTestSafety);
-
-        if (undergroundDangerActive && InOccultMapZone &&
-            GameState.TerritoryType == undergroundTestTerritory &&
-            !DService.Instance().Condition[ConditionFlag.BetweenAreas] &&
-            DService.Instance().ObjectTable.LocalPlayer is { } localPlayer)
-        {
-            const PositionUpdateInstancePacket.MoveType moveType =
-                PositionUpdateInstancePacket.MoveType.NormalMove0;
-            allowUndergroundPositionUpdate = true;
-            try
-            {
-                new PositionUpdateInstancePacket(
-                    localPlayer.Rotation,
-                    new Vector3(
-                        localPlayer.Position.X,
-                        undergroundTestSurfacePosition.Y,
-                        localPlayer.Position.Z),
-                    moveType).Send();
-                DService.Instance().Log.Information("[OccultPotNotifier] Underground test restored surface position");
-            }
-            finally
-            {
-                allowUndergroundPositionUpdate = false;
-            }
-        }
-
-        undergroundTestActive          = false;
-        undergroundTestMovementReady   = false;
-        undergroundTestMoveOutward     = false;
-        undergroundTestStopRequested   = false;
-        undergroundTestSurfacePosition = Vector3.Zero;
-        undergroundTestOuterPosition   = Vector3.Zero;
-        undergroundTestTerritory       = 0;
-        undergroundTestNextMoveAt      = 0;
-        undergroundTestStopDeadline    = 0;
-        EndUndergroundDangerMode();
-        if (!autoDigActive)
-            autoDigStatus = string.Empty;
-
-        if (notify)
-            NotifyHelper.Instance().NotificationInfo("遁地测试已结束并恢复地表位置");
-    }
-
-
-    private static Func<bool?> WaitArrive(Vector3 position, float tolerance, int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (deadline == 0) deadline = Environment.TickCount64 + timeoutMs;
-            return Arrived(position, tolerance) || Environment.TickCount64 >= deadline;
-        };
-    }
-
-    private static Func<bool?> WaitArriveWhen(Func<bool> enabled, Func<Vector3> position, float tolerance, int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (!enabled()) return true;
-            if (deadline == 0) deadline = Environment.TickCount64 + timeoutMs;
-            return Arrived(position(), tolerance) || Environment.TickCount64 >= deadline;
-        };
-    }
-
-    private static Func<bool?> WaitDelayWhen(Func<bool> enabled, int delayMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (!enabled()) return true;
-            if (deadline == 0) deadline = Environment.TickCount64 + delayMs;
-            return Environment.TickCount64 >= deadline;
-        };
-    }
-
-
-    private static Func<bool?> WaitOutOfCombat(int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (deadline == 0) deadline = Environment.TickCount64 + timeoutMs;
-            return !DService.Instance().Condition[ConditionFlag.InCombat] || Environment.TickCount64 >= deadline;
-        };
-    }
-
-
-    private Func<bool?> WaitDirection(int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (deadline == 0) deadline = Environment.TickCount64 + timeoutMs;
-            return !string.IsNullOrEmpty(digDirection) || Environment.TickCount64 >= deadline;
-        };
-    }
-
-
-    private static Func<bool?> WaitLure(int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (deadline == 0) deadline = Environment.TickCount64 + timeoutMs;
-            return HasLure() || Environment.TickCount64 >= deadline;
-        };
-    }
-
-
-    private static Func<bool?> WaitBuffGone(int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (deadline == 0) deadline = Environment.TickCount64 + timeoutMs;
-            return !HasLure() || Environment.TickCount64 >= deadline;
-        };
-    }
-
-    private static Vector3 RandomOffset(Vector3 pos, float maxRadius)
-    {
-        var angle  = Random.Shared.NextSingle() * MathF.Tau;
-        var radius = Random.Shared.NextSingle() * maxRadius;
-        return new Vector3(pos.X + (MathF.Cos(angle) * radius), pos.Y, pos.Z + (MathF.Sin(angle) * radius));
-    }
-
-
-    private Func<bool?> WaitMounted(int timeoutMs = MountTimeoutMS)
-    {
-        long deadline = 0;
-        long nextTry  = 0;
-        return () =>
-        {
-            var now = Environment.TickCount64;
-            if (DService.Instance().Condition[ConditionFlag.Mounted]) return true;
-            if (deadline == 0) deadline = now + timeoutMs;
-            if (now >= deadline)
-                return FailAutoDigMovement("无法上坐骑，已停止自动移动");
-
-            if (!InOccultMapZone || DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false })
-                return FailAutoDigMovement("角色状态异常，无法上坐骑，已停止自动移动");
-
-            var condition = DService.Instance().Condition;
-            if (!condition.IsCasting &&
-                !condition[ConditionFlag.BetweenAreas] &&
-                !condition[ConditionFlag.OccupiedInQuestEvent] &&
-                now >= nextTry)
-            {
-                Mount();
-                nextTry = now + 1500;
-            }
-            return false;
-        };
-    }
-
-
-    private Func<bool?> WaitDismounted(int timeoutMs)
-    {
-        long deadline = 0;
-        long nextTry  = 0;
-        return () =>
-        {
-            var now = Environment.TickCount64;
-            if (deadline == 0) deadline = now + timeoutMs;
-            if (!DService.Instance().Condition[ConditionFlag.Mounted]) return true;
-            if (now >= deadline)
-                return FailAutoDigMovement("无法下坐骑，已停止后续交互");
-            if (now >= nextTry) { Dismount(); nextTry = now + 500; }
-            return false;
-        };
-    }
-
-    private bool FailAutoDigMovement(string message)
-    {
-        DService.Instance().Log.Warning($"[OccultPotNotifier] {message}");
-        NotifyHelper.Instance().NotificationInfo(message);
-        AbortAutoDig();
-        BocchiOn();
-        return true;
-    }
-
-
-
-
-    private Func<bool?> WaitTreasureAtPoint(Vector3 target, int timeoutMs)
-    {
-        long readyDeadline  = 0;
-        long resultDeadline = 0;
-        bool lureUsed       = false;
-        bool lureHadBeforeUse = false;
-        return () =>
-        {
-            var now = Environment.TickCount64;
-            if (readyDeadline == 0) readyDeadline = now + TreasureProbeReadyTimeoutMS;
-
-
-
-            if (lureUsed && lureHadBeforeUse && !HasLure() && NewCofferNearby(PotTreasureOpenRadius))
-                treasureRevealed = true;
-            if (treasureRevealed)
-            {
-                awaitingDirection = false;
-                return true;
-            }
-
-            if (lureUsed)
-            {
-                if (!string.IsNullOrEmpty(digDirection)) return true;
-                if (now < resultDeadline) return false;
-                awaitingDirection = false;
-                return true;
-            }
-
-
-            if (!Arrived(target, 3f))
-                return FailAutoDigMovement("未能稳定到达候选点，已停止自动挖罐");
-
-            var condition = DService.Instance().Condition;
-            if (condition[ConditionFlag.Mounted])
-            {
-                Dismount();
-                return false;
-            }
-
-            if (condition.IsCasting ||
-                condition[ConditionFlag.InCombat] ||
-                condition[ConditionFlag.BetweenAreas] ||
-                condition[ConditionFlag.OccupiedInQuestEvent])
-            {
-                autoDigStatus = "候选点：等待使用圣灵药";
-                if (now < readyDeadline) return false;
-                return FailAutoDigMovement("候选点长时间无法使用圣灵药，已停止自动挖罐");
-            }
-
-            CaptureExistingCoffers();
-            lureHadBeforeUse = HasLure();
-            UseLureForDirection();
-            lureUsed       = true;
-            resultDeadline = now + timeoutMs;
-            return false;
-        };
-    }
-
-
-
-    private unsafe Func<bool?> WaitTreasureOpened(int timeoutMs)
-    {
-        long deadline              = 0;
-        long interactionRequestedAt = 0;
-        long interactionEndedAt     = 0;
-        bool readBarObserved         = false;
-        return () =>
-        {
-            if (!treasureRevealed) return true;
-
-            var now = Environment.TickCount64;
-            if (deadline == 0) deadline = now + timeoutMs;
-            autoDigStatus = readBarObserved ? "读条开启撒娇罐宝箱" : "交互撒娇罐宝箱";
-
-            var tracked = FindMagicPotCoffer(treasureEntityId);
-            if (tracked == null && treasureInteractionStarted)
-            {
-                RestoreMagicPotCofferInteractionPosition();
-                DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Magic Pot coffer opened: 0x{treasureEntityId:X8}");
-                return true;
-            }
-
-            var condition = DService.Instance().Condition;
-            var interactionBusy = condition.IsCasting ||
-                                  condition[ConditionFlag.OccupiedInQuestEvent];
-            if (treasureInteractionStarted && interactionBusy)
-            {
-                readBarObserved     = true;
-                interactionEndedAt = 0;
-                return false;
-            }
-
-            if (readBarObserved)
-            {
-
-                if (interactionEndedAt == 0) interactionEndedAt = now + 1000;
-                if (now < interactionEndedAt) return false;
-
-
-                readBarObserved             = false;
-                treasureInteractionStarted = false;
-                interactionRequestedAt     = 0;
-                interactionEndedAt         = 0;
-            }
-
-
-            if (!treasureInteractionStarted || now - interactionRequestedAt >= 5000)
-            {
-                if (TryInteractWithMagicPotCoffer())
-                {
-                    treasureInteractionStarted = true;
-                    interactionRequestedAt     = now;
-                }
-            }
-
-            if (now >= deadline)
-                return FailAutoDigMovement("撒娇罐宝箱交互或读条超时，已停止自动挖罐");
-            return false;
-        };
-    }
-
-    private static Func<bool?> WaitZone(uint territory, bool wantInside, int timeoutMs)
-    {
-        long deadline = 0;
-        return () =>
-        {
-            if (deadline == 0) deadline = Environment.TickCount64 + timeoutMs;
-            return (GameState.TerritoryType == territory) == wantInside ||
-                   Environment.TickCount64 >= deadline;
-        };
-    }
-
-
-    private static unsafe bool HasLure()
-    {
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return false;
-
-        var chara = (BattleChara*)localPlayer.Address;
-        if (chara != null && chara->GetStatusManager()->HasStatus(LureStatusID)) return true;
-
-        foreach (var status in localPlayer.StatusList)
-            if (status.StatusID == LureStatusID) return true;
-
-        return false;
-    }
-
-    private bool ShouldFinishExpiredLure()
-    {
-        if (!autoDigLureAcquired || cofferHuntActive || treasureRevealed || autoDigDying || crossingDC)
-        {
-            autoDigLureMissingAt = 0;
-            return false;
-        }
-
-        if (autoDigLureExhausted) return true;
-
-        var condition = DService.Instance().Condition;
-        if (DService.Instance().ObjectTable.LocalPlayer is null || condition[ConditionFlag.BetweenAreas])
-        {
-            autoDigLureMissingAt = 0;
-            return false;
-        }
-
-        if (HasLure())
-        {
-            autoDigLureMissingAt = 0;
-            return false;
-        }
-
-        var now = Environment.TickCount64;
-        if (autoDigLureMissingAt == 0)
-        {
-            autoDigLureMissingAt = now;
-            return false;
-        }
-
-        return now - autoDigLureMissingAt >= AutoDigLureMissingGraceMS;
-    }
-
-    private void FinishExpiredLureSearch()
-    {
-        autoDigTask?.Abort();
-        awaitingDirection = false;
-        ResetAutoDigCandidateSearch();
-        VnavStop();
-        ResetAutoDigLureState();
-        autoDigStatus = "撒娇罐力量耗尽，结束挖宝";
-        NotifyHelper.Instance().NotificationInfo("撒娇罐力量已耗尽，已停止寻找本轮宝箱");
-        EnqueueFinish();
-    }
-
-    private void ResetAutoDigLureState()
-    {
-        autoDigLureAcquired  = false;
-        autoDigLureExhausted = false;
-        autoDigLureMissingAt = 0;
-    }
-
-    private static bool Mount()
-    {
-        if (DService.Instance().Condition[ConditionFlag.Mounted]) return true;
-        UseActionManager.Instance().UseAction(ActionType.GeneralAction, 9);
-        return true;
-    }
-
-    private void Dismount()
-    {
-        if (undergroundDangerActive)
-        {
-            DService.Instance().Log.Warning(
-                "[OccultPotNotifier] Blocked dismount while underground danger route is active");
-            return;
-        }
-
-        if (DService.Instance().Condition[ConditionFlag.Mounted])
-            ExecuteCommandManager.Instance().ExecuteCommand(ExecuteCommandFlag.Dismount);
-    }
-
-    private static void VnavMoveTo(Vector3 position) =>
-        ChatManager.Instance().SendMessage(FormattableString.Invariant($"/vnav moveto {position.X} {position.Y} {position.Z}"));
-
-    private static void VnavStop() =>
-        ChatManager.Instance().SendMessage("/vnav stop");
-
-    private static bool Arrived(Vector3 position, float tolerance)
-    {
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return false;
-
-        var deltaX = localPlayer.Position.X - position.X;
-        var deltaZ = localPlayer.Position.Z - position.Z;
-        return (deltaX * deltaX) + (deltaZ * deltaZ) <= tolerance * tolerance;
-    }
-
-    private void CaptureExistingCoffers()
-    {
-        preexistingCofferEntityIds.Clear();
-        foreach (var obj in DService.Instance().ObjectTable)
-        {
-            if (!IsMagicPotCoffer(obj)) continue;
-            var entityId = unchecked((uint)obj.GameObjectID);
-            if (entityId != 0) preexistingCofferEntityIds.Add(entityId);
-        }
-    }
-
-
-
-    private static bool IsMagicPotCoffer(OmenGameObject obj)
-    {
-        // Magic Pot coffers use a dedicated read-bar EventObj protocol.
-        // Keep the exact four-ID whitelist separate from ordinary treasure handling.
-        if (obj.ObjectKind != Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj) return false;
-
-        return obj.DataID is 0x1EB708 or 0x1EBE15 or 0x1EBE16 or 0x1EBE17;
-    }
-
-
-    private bool NewCofferNearby(float radius)
-    {
-        var coffer = FindNearestNewMagicPotCoffer(radius);
-        if (coffer == null) return false;
-
-        treasureEntityId = unchecked((uint)coffer.GameObjectID);
-        return treasureEntityId != 0;
-    }
-
-    private OmenGameObject? FindNearestNewMagicPotCoffer(float radius)
-    {
-        if (DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer) return null;
-
-        OmenGameObject? nearest = null;
-        var bestSquared = radius * radius;
-        foreach (var obj in DService.Instance().ObjectTable)
-        {
-            if (!IsMagicPotCoffer(obj)) continue;
-
-            var entityId = unchecked((uint)obj.GameObjectID);
-            if (entityId == 0 || preexistingCofferEntityIds.Contains(entityId) ||
-                treasureEntityId != 0 && entityId != treasureEntityId)
-                continue;
-
-            var deltaX = obj.Position.X - localPlayer.Position.X;
-            var deltaZ = obj.Position.Z - localPlayer.Position.Z;
-            var distanceSquared = (deltaX * deltaX) + (deltaZ * deltaZ);
-            if (distanceSquared >= bestSquared) continue;
-
-            bestSquared = distanceSquared;
-            nearest     = obj;
-        }
-
-        return nearest;
-    }
-
-    private static OmenGameObject? FindMagicPotCoffer(uint entityId)
-    {
-        if (entityId == 0) return null;
-
-        foreach (var obj in DService.Instance().ObjectTable)
-            if (unchecked((uint)obj.GameObjectID) == entityId && IsMagicPotCoffer(obj))
-                return obj;
-
-        return null;
-    }
-
-    private unsafe bool TryInteractWithMagicPotCoffer()
-    {
-        var coffer = FindMagicPotCoffer(treasureEntityId) ?? FindNearestNewMagicPotCoffer(PotTreasureOpenRadius);
-        if (coffer == null || !coffer.IsTargetable ||
-            DService.Instance().ObjectTable.LocalPlayer is not { } localPlayer)
-            return false;
-
-        var gameObject  = (GameObject*)coffer.Address;
-        var targetSystem = TargetSystem.Instance();
-        if (gameObject == null || targetSystem == null || gameObject->EntityId == 0) return false;
-
-        treasureEntityId = gameObject->EntityId;
-        VnavStop();
-
-
-        if (undergroundDangerActive && !treasureInteractionPositionSpoofed)
-        {
-            const PositionUpdateInstancePacket.MoveType moveType =
-                PositionUpdateInstancePacket.MoveType.NormalMove0;
-            treasureInteractionOriginalPosition = localPlayer.Position;
-            allowUndergroundPositionUpdate = true;
-            try
-            {
-                new PositionUpdateInstancePacket(localPlayer.Rotation, coffer.Position, moveType).Send();
-                treasureInteractionPositionSpoofed = true;
-            }
-            finally
-            {
-                allowUndergroundPositionUpdate = false;
-            }
-        }
-
-        targetSystem->Target = gameObject;
-        targetSystem->InteractWithObject(gameObject, false);
-        DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Magic Pot coffer read-bar interaction requested: 0x{treasureEntityId:X8}");
-        return true;
-    }
-
-
-
-    private unsafe void RestoreMagicPotCofferInteractionPosition()
-    {
-        if (!treasureInteractionPositionSpoofed) return;
-
-        if (DService.Instance().ObjectTable.LocalPlayer is { } localPlayer)
-        {
-            const PositionUpdateInstancePacket.MoveType moveType =
-                PositionUpdateInstancePacket.MoveType.NormalMove0;
-            var undergroundPosition = new Vector3(
-                treasureInteractionOriginalPosition.X,
-                GetUndergroundHeight(treasureInteractionOriginalPosition),
-                treasureInteractionOriginalPosition.Z);
-            allowUndergroundPositionUpdate = true;
-            try
-            {
-                new PositionUpdateInstancePacket(
-                    localPlayer.Rotation,
-                    undergroundPosition,
-                    moveType).Send();
-                DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Magic Pot coffer opened; returned underground to Y={undergroundPosition.Y:F0}");
-            }
-            finally
-            {
-                allowUndergroundPositionUpdate = false;
-            }
-        }
-
-        treasureInteractionPositionSpoofed = false;
-        treasureInteractionOriginalPosition = Vector3.Zero;
-    }
-
-    private void FinishAutoDig()
-    {
-        autoDigActive = false;
-        autoDigDying  = false;
-        awaitingDirection = false;
-        treasureRevealed = false;
-        RestoreMagicPotCofferInteractionPosition();
-        treasureInteractionStarted = false;
-        treasureEntityId = 0;
-        ResetAutoDigCandidateSearch();
-        ResetAutoDigLureState();
-        ResetDeathReturn();
-        if (cofferHuntActive) StopCofferHunt();
-        standbyDeathReturning = false;
-        EndBocchiReturnSuppression();
-        EndUndergroundDangerMode();
-        autoDigStatus = string.Empty;
-        autoDigTarget = null;
-        VnavStop();
-    }
-
-    private void AbortAutoDig()
-    {
-        autoDigTask?.Abort();
-        pendingCofferHuntAutoDigFor = -1;
-        pendingPostFateAutoDigTarget = null;
-        pendingPostFateAutoDigUntil = 0;
-        ResetPostBattleCofferCheck();
-        autoDigActive = false;
-        autoDigDying  = false;
-        awaitingDirection = false;
-        treasureRevealed = false;
-        RestoreMagicPotCofferInteractionPosition();
-        treasureInteractionStarted = false;
-        treasureEntityId = 0;
-        ResetAutoDigCandidateSearch();
-        ResetAutoDigLureState();
-        ResetDeathReturn();
-        if (cofferHuntActive) StopCofferHunt();
-        standbyDeathReturning = false;
-        EndBocchiReturnSuppression();
-        EndUndergroundDangerMode();
-        crossingDC    = false;
-        autoDigStatus = string.Empty;
-        autoDigTarget = null;
-        VnavStop();
-    }
-
-    private void ResetDeathReturn()
-    {
-        deathReturnAt            = 0;
-        deathReturnStarted       = false;
-        nextDeathReturnAttemptAt = 0;
-    }
-
-    #endregion
 
     private void UpdateLure()
     {
@@ -6645,6 +3718,8 @@ internal sealed class OccultPotFeature : IDisposable
 
         public bool      KeepPotFateEnemyTargeted = true;
         public bool      KeepBmrAiDisabledDuringPotFate;
+        public bool      AutoSwitchToNinjaDuringPotFate;
+        public int       PendingSupportJobRestore = -1;
         public bool      EnableAutoDig;
         public bool      AutoDigSkipDanger    = true;
         public bool      AutoDigUndergroundDanger;
@@ -6660,6 +3735,8 @@ internal sealed class OccultPotFeature : IDisposable
 
         [JsonProperty("EnableBocchiHunt")]
         public bool      EnableCofferHunt;
+        public uint      CofferHuntSouthPreferredAetheryteDataID;
+        public uint      CofferHuntNorthPreferredAetheryteDataID = CofferHuntNorthInitialPreferredAetheryteDataID;
 
         public bool      EnableAutoRevive;
         public bool      AutoRevivePartyOnly = true;
@@ -7306,33 +4383,40 @@ internal sealed class OccultPotFeature : IDisposable
     // Read BOCCHI state only; BOCCHI remains the sole owner of combat logic.
     private static class BocchiAutomator
     {
-        public static bool TryEmergencyStop()
+        public static string? TryEmergencyStop()
         {
             try
             {
                 var bocchi = ResolvePlugin();
-                if (bocchi == null) return false;
+                if (bocchi == null) return null;
 
                 var automatorModule = ResolveModule(bocchi, "BOCCHI.Modules.Automator.AutomatorModule");
-                if (automatorModule == null) return false;
+                if (automatorModule == null) return null;
 
                 const BindingFlags bf = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-                var emergencyStop = automatorModule.GetType().GetMethod(
-                    "DisableIllegalMode",
-                    bf,
-                    null,
-                    Type.EmptyTypes,
-                    null);
-                if (emergencyStop == null) return false;
+                var moduleType = automatorModule.GetType();
+                var emergencyStop = moduleType.GetMethod(
+                                        "RequestStopAll",
+                                        bf,
+                                        null,
+                                        Type.EmptyTypes,
+                                        null) ??
+                                    moduleType.GetMethod(
+                                        "DisableIllegalMode",
+                                        bf,
+                                        null,
+                                        Type.EmptyTypes,
+                                        null);
+                if (emergencyStop == null) return null;
 
                 emergencyStop.Invoke(automatorModule, null);
-                return true;
+                return emergencyStop.Name;
             }
             catch (Exception ex)
             {
                 DService.Instance().Log.Warning(
-                    $"[OccultPotNotifier] BOCCHI emergency stop failed: {ex.GetType().Name}");
-                return false;
+                    $"[OccultPotNotifier] BOCCHI stop request failed: {ex.GetType().Name}");
+                return null;
             }
         }
 
@@ -7367,69 +4451,6 @@ internal sealed class OccultPotFeature : IDisposable
             }
         }
 
-        public static bool TryGetTreasureScanAfter(
-            DateTime completedAt,
-            DateTime observedCastAt,
-            out int bronzeChests,
-            out int silverChests)
-        {
-            bronzeChests = 0;
-            silverChests = 0;
-
-            try
-            {
-                var bocchi = ResolvePlugin();
-                if (bocchi == null) return false;
-
-                var tracker = ResolveService(bocchi, "BOCCHI.Treasure.Services.ITreasureTracker");
-                var source = "service";
-                if (tracker == null)
-                {
-                    tracker = ResolveModuleMember(
-                        bocchi,
-                        "BOCCHI.Modules.Treasure.TreasureModule",
-                        "Tracker");
-                    source = "module";
-                }
-
-                if (tracker == null || GetMember(tracker, "CountInitialised") is not bool countInitialised ||
-                    !countInitialised)
-                    return false;
-
-                var lastParsedValue = GetMember(tracker, "lastParseWideText") ??
-                                      GetMember(tracker, "LastParseWideText");
-                var lastParsed = lastParsedValue is DateTime parsed ? parsed : DateTime.MinValue;
-                var lastCast = observedCastAt;
-                var automator = ResolveService(bocchi, "BOCCHI.Automator.Services.IAutomator");
-                if (automator != null)
-                {
-                    _ = GetMember(automator, "CurrentState");
-                    var stateMachine = GetMember(automator, "stateMachine");
-                    var castHandler = FindStateHandler(
-                        stateMachine,
-                        "BOCCHI.Automator.StateMachine.Handlers.CastingTreasureSightHandler");
-                    if (castHandler != null && GetMember(castHandler, "lastCast") is DateTime cast &&
-                        cast > lastCast)
-                        lastCast = cast;
-                }
-
-                if (lastParsed <= completedAt) return false;
-                if (lastCast > completedAt && lastParsed < lastCast) return false;
-
-                bronzeChests = Convert.ToInt32(GetMember(tracker, "BronzeChests") ?? 0);
-                silverChests = Convert.ToInt32(GetMember(tracker, "SilverChests") ?? 0);
-                DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] BOCCHI treasure scan acquired via {source}: " +
-                    $"cast={(lastCast > completedAt ? lastCast.ToString("O") : "unavailable")}, " +
-                    $"parsed={lastParsed:O}, bronze={bronzeChests}, silver={silverChests}");
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         private static object? ResolveService(object bocchi, string serviceTypeName)
         {
             var serviceProvider = GetMember(bocchi, "services") as IServiceProvider;
@@ -7443,12 +4464,6 @@ internal sealed class OccultPotFeature : IDisposable
             }
 
             return null;
-        }
-
-        private static object? ResolveModuleMember(object bocchi, string moduleTypeName, string memberName)
-        {
-            var module = ResolveModule(bocchi, moduleTypeName);
-            return module == null ? null : GetMember(module, memberName);
         }
 
         private static object? ResolveModule(object bocchi, string moduleTypeName)
@@ -7470,23 +4485,6 @@ internal sealed class OccultPotFeature : IDisposable
             }
 
             return getModule?.MakeGenericMethod(moduleType).Invoke(modules, null);
-        }
-
-        private static object? FindStateHandler(object? stateMachine, string handlerTypeName)
-        {
-            if (stateMachine == null ||
-                GetMember(stateMachine, "handlers") is not System.Collections.IEnumerable handlers)
-                return null;
-
-            foreach (var entry in handlers)
-            {
-                if (entry == null) continue;
-                var handler = GetMember(entry, "Value");
-                if (handler?.GetType().FullName == handlerTypeName)
-                    return handler;
-            }
-
-            return null;
         }
 
         private static object? ResolvePlugin()

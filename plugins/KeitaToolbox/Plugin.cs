@@ -3,10 +3,8 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
-using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Agent;
 using Dalamud.Game.Command;
@@ -19,7 +17,7 @@ using OmenTools;
 
 namespace KeitaToolbox;
 
-public sealed class Plugin : IDalamudPlugin
+public sealed partial class Plugin : IDalamudPlugin
 {
     private const string Command = "/keitatoolbox";
     private const string ShortCommand = "/ktb";
@@ -27,7 +25,7 @@ public sealed class Plugin : IDalamudPlugin
         "https://dalamudunlock.ff14.cafe/toolbox/unlock";
     private const string UsageEndpoint =
         "https://pluginping.keita.cc/v1/heartbeat";
-    // Keep the password workflow available for future reactivation.
+    // Keep the dormant password workflow compatible with existing unlock state.
     private static bool PasswordProtectionEnabled => false;
 
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
@@ -51,7 +49,8 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
     internal static Configuration Config { get; private set; } = null!;
-    internal static DeferredScheduler Scheduler { get; } = new();
+    internal static DeferredScheduler Scheduler { get; } = new(
+        ex => Log.Error(ex, "A deferred toolbox action failed."));
     internal static bool ProtectedFeaturesUnlocked =>
         !PasswordProtectionEnabled || Config.ProtectedFeaturesUnlocked;
 
@@ -195,7 +194,7 @@ public sealed class Plugin : IDalamudPlugin
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "A deferred toolbox action failed.");
+            Log.Error(ex, "A toolbox framework update failed.");
         }
     }
 
@@ -239,167 +238,6 @@ public sealed class Plugin : IDalamudPlugin
             return;
 
         windowOpen = true;
-    }
-
-    private void OpenWindow() => windowOpen = true;
-
-    private void DrawWindow()
-    {
-        if (!windowOpen)
-            return;
-
-        ImGui.SetNextWindowSize(new Vector2(720, 620), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("Keita 工具箱", ref windowOpen))
-        {
-            ImGui.End();
-            return;
-        }
-
-        ImGui.TextDisabled("各项功能相互独立，修改后立即保存。");
-        ImGui.Separator();
-
-        if (ImGui.BeginTabBar("ToolboxTabs"))
-        {
-            DrawTab("常规", () =>
-            {
-                basicFeatures?.DrawBmraiSettings();
-                basicFeatures?.DrawImeSettings();
-                if (aeAssistStartupFeature == null)
-                    DrawUnavailable("AEAssist 启动自动化");
-                else
-                    aeAssistStartupFeature.DrawSettings();
-                basicFeatures?.DrawPluginSwitcherSettings();
-                if (mapGearsetFeature == null)
-                    DrawUnavailable("按地图自动切换套装");
-                else
-                    mapGearsetFeature.DrawSettings();
-                DrawProtectedFeatureSettings();
-            });
-            DrawTab("副本", () =>
-            {
-                basicFeatures?.DrawCommenceSettings();
-                autoLeaveFeature?.DrawSettings();
-            });
-            DrawTab("招募", () =>
-            {
-                basicFeatures?.DrawAnnouncementSettings();
-                autoInviteFeature?.DrawSettings();
-                basicFeatures?.DrawPartyFinderSettings();
-            });
-            DrawTab("交易", () =>
-            {
-                if (autoRefuseTradeFeature == null)
-                    DrawUnavailable("自动拒绝交易");
-                else
-                    autoRefuseTradeFeature.DrawSettings();
-            });
-            DrawTab("肖像", () =>
-            {
-                if (portraitFeature == null)
-                    DrawUnavailable("肖像与装备套装同步");
-                else
-                    portraitFeature.DrawSettings();
-            });
-            DrawTab("新月岛", () =>
-            {
-                if (occultPotFeature == null)
-                    DrawUnavailable("魔法罐助手");
-                else
-                    occultPotFeature.DrawSettings();
-            });
-            DrawTab("验证", () =>
-            {
-                if (verificationMonitorFeature == null)
-                    DrawUnavailable("插件验证监控");
-                else
-                    verificationMonitorFeature.DrawSettings();
-            });
-            ImGui.EndTabBar();
-        }
-
-        ImGui.End();
-    }
-
-    private static void DrawTab(string label, Action draw)
-    {
-        if (!ImGui.BeginTabItem(label))
-            return;
-
-        ImGui.Spacing();
-        draw();
-        ImGui.EndTabItem();
-    }
-
-    internal static bool DrawFeatureToggle(string label, bool value, Action<bool> setter)
-    {
-        var changedValue = value;
-        if (!ImGui.Checkbox($"启用{label}", ref changedValue))
-            return false;
-
-        setter(changedValue);
-        Config.Save();
-        return true;
-    }
-
-    internal static void DrawHelp(string text)
-    {
-        ImGui.Indent();
-        ImGui.PushTextWrapPos();
-        ImGui.TextDisabled(text);
-        ImGui.PopTextWrapPos();
-        ImGui.Unindent();
-        ImGui.Spacing();
-    }
-
-    private void DrawProtectedFeatureSettings()
-    {
-        if (PasswordProtectionEnabled && !Config.ProtectedFeaturesUnlocked)
-        {
-            if (!ImGui.CollapsingHeader("受保护的高级工具"))
-                return;
-
-            ImGui.TextWrapped(
-                "首次输入工具箱密码即可解锁本机的受保护高级功能，后续无需再次输入。");
-            CompleteUnlockRequest();
-            ImGui.SetNextItemWidth(300f);
-            var submitted = ImGui.InputText(
-                "密码",
-                ref protectedPassword,
-                128,
-                ImGuiInputTextFlags.Password | ImGuiInputTextFlags.EnterReturnsTrue);
-            ImGui.SameLine();
-            submitted |= ImGui.Button("解锁");
-
-            if (submitted && unlockTask == null)
-            {
-                unlockError = string.Empty;
-                unlockTask = VerifyProtectedPasswordAsync(protectedPassword);
-                protectedPassword = string.Empty;
-            }
-
-            if (!ProtectedFeaturesUnlocked)
-            {
-                if (unlockTask != null)
-                    ImGui.TextDisabled("正在验证……");
-                else if (unlockError.Length > 0)
-                    ImGui.TextColored(new Vector4(1f, 0.35f, 0.35f, 1f), unlockError);
-                DrawHelp(
-                    "密码通过 HTTPS 验证且不会保存，本地仅记录验证成功状态。");
-                return;
-            }
-        }
-
-        DrawInstantReturnSettings();
-        if (advancedToolsFeature == null)
-        {
-            DrawUnavailable("战斗辅助");
-            DrawUnavailable("高级移动工具");
-        }
-        else
-        {
-            advancedToolsFeature.DrawCombatUtilitySettings();
-            advancedToolsFeature.DrawSettings();
-        }
     }
 
     private async Task<bool> VerifyProtectedPasswordAsync(string input)
@@ -519,21 +357,6 @@ public sealed class Plugin : IDalamudPlugin
 
     private sealed record UsageRequest(string InstallId, string Version);
 
-    private static void DrawInstantReturnSettings()
-    {
-        if (!ImGui.CollapsingHeader("即刻返回"))
-            return;
-
-        DrawFeatureToggle(
-            "即刻返回",
-            Config.Features.InstantReturn,
-            value => Config.Features.InstantReturn = value);
-        DrawHelp("立即执行返回命令。命令：/ktb return");
-
-        if (ImGui.Button("立即返回"))
-            ExecuteInstantReturn();
-    }
-
     private static void ExecuteInstantReturn()
     {
         if (!ProtectedFeaturesUnlocked)
@@ -564,9 +387,6 @@ public sealed class Plugin : IDalamudPlugin
             return null;
         }
     }
-
-    private static void DrawUnavailable(string name) =>
-        ImGui.TextDisabled($"{name}当前不可用，请检查 Dalamud 日志。");
 
     private static void WarnAboutLegacyPlugins()
     {

@@ -1,0 +1,15 @@
+<Project Sdk="MSTest.Sdk/4.3.3">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\plugins\KeitaToolbox\AutomationPolicies.cs" Link="AutomationPolicies.cs" />
+    <Compile Include="..\..\plugins\KeitaToolbox\AggroAvoidancePolicy.cs" Link="AggroAvoidancePolicy.cs" />
+    <Compile Include="..\..\plugins\KeitaToolbox\DeferredScheduler.cs" Link="DeferredScheduler.cs" />
+    <Compile Include="..\..\plugins\KeitaToolbox\PluginSwitchingPolicy.cs" Link="PluginSwitchingPolicy.cs" />
+  </ItemGroup>
+</Project>

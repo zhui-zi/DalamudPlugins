@@ -98,10 +98,6 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
             return;
         }
 
-        var localPlayer = Plugin.ObjectTable.LocalPlayer;
-        if (localPlayer == null)
-            return;
-
         var logModule = RaptureLogModule.Instance();
         if (logModule == null ||
             !logModule->GetLogMessageDetail(
@@ -147,25 +143,14 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
         if (!matched)
             return;
 
-        var groupManager = GroupManager.Instance();
-        var group = groupManager == null ? null : groupManager->GetGroup();
-        if (group == null || group->MemberCount >= 8)
+        if (!CanInviteNow(contentId))
             return;
-        if (group->MemberCount > 0 && !group->IsEntityIdPartyLeader(localPlayer.EntityId))
-            return;
-
-        foreach (var member in Plugin.PartyList)
-        {
-            if (member.ContentId == contentId)
-                return;
-        }
 
         var sender = SeString.Parse(senderBytes);
         if (sender.Payloads.FirstOrDefault(payload => payload is PlayerPayload) is not PlayerPayload player)
             return;
 
         var scheduleGroup = SchedulePrefix + contentId;
-        var inInstance = InInvitableInstance();
         Plugin.Scheduler.Cancel(scheduleGroup);
         Plugin.Scheduler.Schedule(
             scheduleGroup,
@@ -173,25 +158,15 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
             () => ExecuteInvite(
                 contentId,
                 player.PlayerName,
-                (ushort)player.World.RowId,
-                inInstance));
+                (ushort)player.World.RowId));
     }
 
     private static void ExecuteInvite(
         ulong contentId,
         string playerName,
-        ushort worldId,
-        bool inInstance)
+        ushort worldId)
     {
-        if (!Plugin.Config.Features.AutoInviteToParty ||
-            !Plugin.Config.AutoInvite.RuntimeEnabled)
-        {
-            return;
-        }
-
-        var groupManager = GroupManager.Instance();
-        var group = groupManager == null ? null : groupManager->GetGroup();
-        if (group == null || group->MemberCount >= 8)
+        if (!CanInviteNow(contentId))
             return;
 
         var proxy = InfoProxyPartyInvite.Instance();
@@ -201,10 +176,34 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
         if (Plugin.Config.AutoInvite.PrintMessage)
             Plugin.Chat.Print($"[Keita 工具箱] 正在邀请 {playerName}。");
 
-        if (inInstance)
+        if (InInvitableInstance())
             proxy->InviteToPartyInInstanceByContentId(contentId);
         else
             proxy->InviteToParty(contentId, playerName, worldId);
+    }
+
+    private static bool CanInviteNow(ulong contentId)
+    {
+        var localPlayer = Plugin.ObjectTable.LocalPlayer;
+        var groupManager = GroupManager.Instance();
+        var group = groupManager == null ? null : groupManager->GetGroup();
+        var proxy = InfoProxyPartyInvite.Instance();
+        var alreadyInParty = Plugin.PartyList.Any(member => member.ContentId == contentId);
+        var hasPendingInvitation = proxy != null &&
+                                   !string.IsNullOrWhiteSpace(proxy->InviterName.ToString());
+
+        return AutoInvitePolicy.CanInvite(
+            Plugin.Config.Features.AutoInviteToParty,
+            Plugin.Config.AutoInvite.RuntimeEnabled,
+            Plugin.Condition[ConditionFlag.BetweenAreas] ||
+            Plugin.Condition[ConditionFlag.BetweenAreas51],
+            localPlayer != null,
+            group != null,
+            group == null ? -1 : group->MemberCount,
+            group != null && localPlayer != null &&
+            group->IsEntityIdPartyLeader(localPlayer.EntityId),
+            alreadyInParty,
+            hasPendingInvitation);
     }
 
     private static bool InInvitableInstance()

@@ -23,11 +23,14 @@ internal sealed unsafe class BasicFeatures : IDisposable
 {
     private const string RecruitmentMarker = "招募信息为：";
     private const long ImeCleanupIntervalMs = 100;
+    private const long PluginSwitchReconcileIntervalMs = 1_000;
     private const uint NiCompositionStr = 0x0015;
     private const uint CpsCancel = 0x0004;
 
     private static readonly Dictionary<string, bool> dutySelectedOnly = [];
     private readonly Dictionary<MapRule, MapRuleEditorState> mapRuleEditors = [];
+    private readonly Dictionary<string, bool> pluginSwitcherOriginalStates =
+        new(StringComparer.OrdinalIgnoreCase);
     private string pendingRecruitment = string.Empty;
     private string commenceSearch = string.Empty;
     private string partyFinderInput = string.Empty;
@@ -35,6 +38,7 @@ internal sealed unsafe class BasicFeatures : IDisposable
     private string pvpEnablePluginSearch = string.Empty;
     private uint lastJobId;
     private long nextImeCleanupAt;
+    private long nextPluginSwitchReconcileAt;
     private nint gameWindow;
     private bool? lastInPvp;
     private MapRule? appliedMapRule;
@@ -266,72 +270,78 @@ internal sealed unsafe class BasicFeatures : IDisposable
         }
 
         var inPvp = Plugin.ClientState.IsPvP;
+        var contextChanged = false;
         if (lastInPvp != inPvp)
         {
-            var previous = lastInPvp;
             lastInPvp = inPvp;
-            if (inPvp)
-                ApplyPluginRules(
-                    Plugin.Config.PluginSwitcher.DisableInPvp,
-                    Plugin.Config.PluginSwitcher.EnableInPvp,
-                    true);
-            else if (previous == true)
-                ApplyPluginRules(
-                    Plugin.Config.PluginSwitcher.DisableInPvp,
-                    Plugin.Config.PluginSwitcher.EnableInPvp,
-                    false);
+            contextChanged = true;
         }
 
         var territory = Plugin.ClientState.TerritoryType;
         var rule = Plugin.Config.PluginSwitcher.MapRules.FirstOrDefault(
             item => ParseList(item.Territories)
                 .Any(value => uint.TryParse(value, out var id) && id == territory));
-        if (ReferenceEquals(rule, appliedMapRule))
+        var ruleChanged = !ReferenceEquals(rule, appliedMapRule);
+        if (!ruleChanged && !contextChanged && pluginSwitcherOriginalStates.Count == 0)
             return;
 
-        if (appliedMapRule != null)
-            ApplyPluginRules(appliedMapRule.Disable, appliedMapRule.Enable, false);
-        if (rule != null)
-            ApplyPluginRules(rule.Disable, rule.Enable, true);
         appliedMapRule = rule;
+        ReconcilePluginSwitching(ruleChanged || contextChanged);
     }
 
     private void RestorePluginSwitching()
     {
-        if (appliedMapRule != null)
-        {
-            ApplyPluginRules(appliedMapRule.Disable, appliedMapRule.Enable, false);
-            appliedMapRule = null;
-        }
-
-        if (lastInPvp == true)
-        {
-            ApplyPluginRules(
-                Plugin.Config.PluginSwitcher.DisableInPvp,
-                Plugin.Config.PluginSwitcher.EnableInPvp,
-                false);
-        }
-
+        var contextChanged = appliedMapRule != null || lastInPvp.HasValue;
+        appliedMapRule = null;
         lastInPvp = null;
+        if (contextChanged || pluginSwitcherOriginalStates.Count > 0)
+            ReconcilePluginSwitching(contextChanged);
     }
 
-    private static void ApplyPluginRules(string disableList, string enableList, bool entering)
+    private void ReconcilePluginSwitching(bool force)
     {
-        foreach (var name in ParseList(disableList))
+        var now = Environment.TickCount64;
+        if (!force && now < nextPluginSwitchReconcileAt)
+            return;
+        nextPluginSwitchReconcileAt = now + PluginSwitchReconcileIntervalMs;
+
+        var rules = new List<PluginSwitchRule>();
+        if (lastInPvp == true)
         {
-            if (entering)
-                DisablePlugin(name);
-            else
-                EnablePlugin(name);
+            rules.Add(new PluginSwitchRule(
+                Plugin.Config.PluginSwitcher.DisableInPvp,
+                Plugin.Config.PluginSwitcher.EnableInPvp));
         }
 
-        foreach (var name in ParseList(enableList))
+        if (appliedMapRule != null)
         {
-            if (entering)
-                EnablePlugin(name);
-            else
-                DisablePlugin(name);
+            rules.Add(new PluginSwitchRule(
+                appliedMapRule.Disable,
+                appliedMapRule.Enable));
         }
+
+        var desiredStates = PluginSwitchingPolicy.BuildDesiredStates(rules);
+        var changes = PluginSwitchingPolicy.PlanChanges(
+            pluginSwitcherOriginalStates,
+            desiredStates,
+            GetPluginState);
+        foreach (var change in changes)
+            SetPluginState(change.InternalName, change.Enabled);
+    }
+
+    private static bool? GetPluginState(string internalName)
+    {
+        var plugin = Plugin.PluginInterface.InstalledPlugins.FirstOrDefault(
+            item => item.InternalName.Equals(internalName, StringComparison.OrdinalIgnoreCase));
+        return plugin?.IsLoaded;
+    }
+
+    private static void SetPluginState(string internalName, bool enabled)
+    {
+        if (enabled)
+            EnablePlugin(internalName);
+        else
+            DisablePlugin(internalName);
     }
 
     private static void EnablePlugin(string internalName)
@@ -573,7 +583,7 @@ internal sealed unsafe class BasicFeatures : IDisposable
         }
 
         Plugin.DrawHelp(
-            $"直接从列表勾选插件和地图；列表中没有的项目可在“手动编辑”中填写。当前地图：{Plugin.ClientState.TerritoryType}；PvP：{Plugin.ClientState.IsPvP}。");
+            $"直接从列表勾选插件和地图；列表中没有的项目可在“手动编辑”中填写。离开规则后恢复插件原始状态，规则冲突时禁用优先。当前地图：{Plugin.ClientState.TerritoryType}；PvP：{Plugin.ClientState.IsPvP}。");
     }
 
     private static void DrawPluginSelector(
@@ -801,12 +811,7 @@ internal sealed unsafe class BasicFeatures : IDisposable
         public string EnablePluginSearch = string.Empty;
     }
 
-    private static List<string> ParseList(string value) =>
-        value.Split(
-                ',',
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+    private static List<string> ParseList(string value) => PluginSwitchingPolicy.ParseList(value);
 
     private static void ClickButton(AtkUnitBase* addon, AtkComponentButton* button)
     {

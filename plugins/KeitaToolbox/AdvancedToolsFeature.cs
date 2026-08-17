@@ -16,6 +16,8 @@ namespace KeitaToolbox;
 
 internal sealed unsafe class AdvancedToolsFeature : IDisposable
 {
+    private const int DiveTeleportOpcode = 991;
+
     private const string SpeedSignature =
         "40 ?? 48 ?? ?? ?? 48 ?? ?? 48 ?? ?? ?? 48 ?? ?? FF 90 ?? ?? ?? ?? 48 ?? ?? 75 ?? F3 ?? ?? ?? ?? ?? ?? ??";
     private const string MovePermissionSignature =
@@ -44,7 +46,11 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B F9 41 8B F0";
 
     private delegate float SpeedDelegate(nint arg1);
-    private delegate nint MovePermissionDelegate(nint arg1, uint actionId, int arg3, int arg4);
+    private delegate bool MovePermissionDelegate(
+        Conditions* conditions,
+        uint actionId,
+        int arg3,
+        int arg4);
     private delegate long SkillPostActionMoveDelegate(long arg1);
     private delegate float ActionRangeDelegate(uint actionId);
     private delegate long FallCheckDelegate(long arg1, uint flags);
@@ -72,6 +78,8 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         bool isFirstHalf);
     private delegate nint MovementPacketDelegate(nuint context, nint data, uint length);
 
+    private readonly HashSet<uint> knownActionIds = [];
+    private readonly HashSet<uint> frontlineFullRangeActions = [];
     private readonly HashSet<uint> gapCloserActions = [];
     private static readonly HashSet<uint> BlockedStatusIds =
     [
@@ -105,7 +113,12 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
     {
         foreach (var action in Plugin.Data.GetExcelSheet<LuminaAction>())
         {
-            if (action.AffectsPosition && action.CanTargetHostile && action.IsPlayerAction)
+            knownActionIds.Add(action.RowId);
+            if (!action.AffectsPosition || !action.CanTargetHostile)
+                continue;
+
+            frontlineFullRangeActions.Add(action.RowId);
+            if (action.IsPlayerAction)
                 gapCloserActions.Add(action.RowId);
         }
 
@@ -380,15 +393,19 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             : original;
     }
 
-    private nint MovePermissionDetour(nint arg1, uint actionId, int arg3, int arg4)
+    private bool MovePermissionDetour(
+        Conditions* conditions,
+        uint actionId,
+        int arg3,
+        int arg4)
     {
         if (Enabled(settings => settings.MovePermission) &&
             actionId is 96 or 97 or 98 or 99 or 1001 or 1006 or 1007 or 1008)
         {
-            return 1;
+            return true;
         }
 
-        return movePermissionHook!.Original(arg1, actionId, arg3, arg4);
+        return movePermissionHook!.Original(conditions, actionId, arg3, arg4);
     }
 
     private long SkillPostActionMoveDetour(long arg1) =>
@@ -402,7 +419,11 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         if (Plugin.ProtectedFeaturesUnlocked &&
             Plugin.Config.Features.FrontlineRemoteInteraction &&
             Plugin.ClientState.IsPvP)
-            return original + Plugin.Config.CombatUtilities.FrontlineRangeBonus;
+            return original + CombatUtilityPolicy.GetFrontlineRangeBonus(
+                actionId,
+                knownActionIds.Contains(actionId),
+                frontlineFullRangeActions.Contains(actionId),
+                Plugin.Config.CombatUtilities.FrontlineRangeBonus);
 
         if (Plugin.ProtectedFeaturesUnlocked &&
             Plugin.Config.Features.AdvancedTools &&
@@ -799,7 +820,7 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         try
         {
             new Span<byte>((void*)packet, packetSize).Clear();
-            *(int*)(packet + 0) = 554;
+            *(int*)(packet + 0) = DiveTeleportOpcode;
             *(int*)(packet + 8) = 56;
             *(float*)(packet + 32) = Plugin.ObjectTable.LocalPlayer?.Rotation ?? 0f;
             *(Vector3*)(packet + 36) = position;
