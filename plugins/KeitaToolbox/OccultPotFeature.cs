@@ -147,6 +147,12 @@ internal sealed class OccultPotFeature : IDisposable
     private bool       bmrAiSuppressionActive;
     private bool       bmrAiWasEnabled;
     private long       bmrAiSuppressionReleaseAt;
+    private Hook<BmrWalkInputDelegate>? bmrWalkInputHook;
+    private Vector3?    potFateMovementDirection;
+    private FieldInfo?  bmrMovementInstanceField;
+    private FieldInfo?  bmrDesiredDirectionField;
+    private Vector3?    lastInjectedBmrDirection;
+    private object?     lastInjectedBmrMovementInstance;
 
     private readonly Queue<CurrencyExchangeRequest> currencyExchangeQueue = [];
     private readonly Dictionary<uint, long> currencyExchangeRetryAfter = [];
@@ -171,6 +177,7 @@ internal sealed class OccultPotFeature : IDisposable
     private const int  CofferHuntBronzeCap           = 30;
     private const long PostBattleCheckTimeoutMS      = 180_000;
     private const long BmrAiSuppressionReleaseGraceMS = 500;
+    private const string BmrWalkInputSignature = "E8 ?? ?? ?? ?? 80 7B 3E 00 48 8D 3D";
     private const uint TreasuresightActionID         = 0xA2B3;
     private const uint TreasuresightGeneralActionID  = 32;
 
@@ -208,6 +215,10 @@ internal sealed class OccultPotFeature : IDisposable
     private unsafe delegate void ShowBattleTalkImageDelegate(
         UIModule* module, CStringPointer name, CStringPointer text, float duration, uint image, byte style, int sound, uint entityID);
     private Hook<ShowBattleTalkImageDelegate>? showBattleTalkImageHook;
+
+    private unsafe delegate void BmrWalkInputDelegate(
+        nint self, float* sumLeft, float* sumForward, float* sumTurnLeft,
+        byte* haveBackwardOrStrafe, byte* unknown, byte additiveInput);
 
     private Pot?   displayPot;
     private string displayText       = string.Empty;
@@ -439,6 +450,8 @@ internal sealed class OccultPotFeature : IDisposable
             ("ShowBattleTalkImage", (ShowBattleTalkImageDelegate)ShowBattleTalkImageDetour);
         showBattleTalkImageHook.Enable();
 
+        InitializeBmrMovementBridge();
+
 
         DService.Instance().Chat.ChatMessage += OnChatMessage;
         GamePacketManager.Instance().RegPreSendPacket(OnPreSendPacket);
@@ -471,6 +484,7 @@ internal sealed class OccultPotFeature : IDisposable
 
     public void Dispose()
     {
+        StopPotFateApproach();
         RestoreBmrAiAfterPotFate();
         DService.Instance().ClientState.TerritoryChanged -= OnZoneChanged;
         DService.Instance().Chat.ChatMessage             -= OnChatMessage;
@@ -495,6 +509,9 @@ internal sealed class OccultPotFeature : IDisposable
 
         showBattleTalkImageHook?.Dispose();
         showBattleTalkImageHook = null;
+
+        bmrWalkInputHook?.Dispose();
+        bmrWalkInputHook = null;
 
         StopUndergroundTest(false);
         undergroundTestTask?.Dispose();
@@ -922,7 +939,8 @@ internal sealed class OccultPotFeature : IDisposable
 
             ImGui.TextColored(KnownColor.Gray.ToVector4(),
                 "进入魔法罐 FATE 的圆形区域后持续关闭 Bossmod Reborn AI。\n" +
-                "离开或 FATE 结束时，仅恢复由本功能关闭且进入前原本开启的 AI。");
+                "离开或 FATE 结束时，仅恢复由本功能关闭且进入前原本开启的 AI。\n" +
+                "AI 关闭时复用 BMR 移动输入靠近选中目标；手动移动和 BMR 机制移动优先。");
         }
 
         ConfigUIAutoRevive();
@@ -1128,6 +1146,7 @@ internal sealed class OccultPotFeature : IDisposable
 
     private void OnZoneChanged(uint zone)
     {
+        StopPotFateApproach();
         RestoreBmrAiAfterPotFate();
         StopUndergroundTest(false);
         FrameworkManager.Instance().Unreg(OnUpdate);
@@ -2112,7 +2131,10 @@ internal sealed class OccultPotFeature : IDisposable
     {
         if (!config.KeepPotFateEnemyTargeted ||
             DService.Instance().ObjectTable.LocalPlayer is not { IsDead: false } localPlayer)
+        {
+            StopPotFateApproach();
             return;
+        }
 
         ushort activePotFateID = 0;
         var nearestFateCenterDistance = float.MaxValue;
@@ -2131,8 +2153,12 @@ internal sealed class OccultPotFeature : IDisposable
 
         var targetSystem = TargetSystem.Instance();
         if (activePotFateID == 0 || targetSystem == null)
+        {
+            StopPotFateApproach();
             return;
+        }
 
+        OmenBattleChara? selected = null;
         OmenBattleChara? nearest = null;
         var nearestDistance = float.MaxValue;
 
@@ -2142,7 +2168,10 @@ internal sealed class OccultPotFeature : IDisposable
                 continue;
 
             if (enemy.Address == (nint)targetSystem->Target)
-                return;
+            {
+                selected = enemy;
+                break;
+            }
 
             var distance = Vector3.DistanceSquared(localPlayer.Position, enemy.Position);
             if (distance >= nearestDistance) continue;
@@ -2151,8 +2180,187 @@ internal sealed class OccultPotFeature : IDisposable
             nearestDistance = distance;
         }
 
-        if (nearest != null)
-            targetSystem->Target = (GameObject*)nearest.Address;
+        selected ??= nearest;
+        if (selected == null)
+        {
+            StopPotFateApproach();
+            return;
+        }
+
+        if (selected.Address != (nint)targetSystem->Target)
+            targetSystem->Target = (GameObject*)selected.Address;
+
+        MaintainPotFateApproach(localPlayer, selected);
+    }
+
+    private unsafe void MaintainPotFateApproach(OmenBattleChara localPlayer, OmenBattleChara target)
+    {
+        if (BmrAi.TryGetEnabled(out var enabled) && enabled)
+        {
+            StopPotFateApproach();
+            return;
+        }
+
+        var playerObject = (Character*)localPlayer.Address;
+        var targetObject = (GameObject*)target.Address;
+        var castInfo = playerObject == null ? null : playerObject->GetCastInfo();
+        if (targetObject == null || castInfo != null && castInfo->IsCasting)
+        {
+            StopPotFateApproach();
+            return;
+        }
+
+        var delta = target.Position - localPlayer.Position;
+        delta.Y = 0f;
+        var approachRange = localPlayer.ClassJob.Value.Role is 1 or 2
+            ? Plugin.Config.Bmrai.MeleeDistance
+            : Plugin.Config.Bmrai.RangedDistance;
+        var stopDistance = Math.Max(0f, approachRange) + Math.Max(0f, targetObject->HitboxRadius);
+        if (delta.LengthSquared() <= stopDistance * stopDistance)
+        {
+            StopPotFateApproach();
+            return;
+        }
+
+        potFateMovementDirection = delta;
+        TryInjectBmrMovementDirection(delta);
+    }
+
+    private void StopPotFateApproach()
+    {
+        potFateMovementDirection = null;
+
+        if (lastInjectedBmrMovementInstance != null &&
+            lastInjectedBmrDirection is { } lastDirection &&
+            bmrDesiredDirectionField?.DeclaringType?.IsInstanceOfType(lastInjectedBmrMovementInstance) == true)
+        {
+            try
+            {
+                if (bmrDesiredDirectionField.GetValue(lastInjectedBmrMovementInstance) is Vector3 currentDirection &&
+                    Vector3.DistanceSquared(currentDirection, lastDirection) <= 0.0001f)
+                    bmrDesiredDirectionField.SetValue(lastInjectedBmrMovementInstance, null);
+            }
+            catch
+            {
+            }
+        }
+
+        lastInjectedBmrDirection = null;
+        lastInjectedBmrMovementInstance = null;
+    }
+
+    private unsafe void InitializeBmrMovementBridge()
+    {
+        if (bmrWalkInputHook != null) return;
+
+        try
+        {
+            bmrWalkInputHook = Plugin.Interop.HookFromSignature<BmrWalkInputDelegate>(
+                BmrWalkInputSignature,
+                BmrWalkInputDetour);
+            bmrWalkInputHook.Enable();
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Warning(ex, "Failed to initialize the BMR movement bridge.");
+            bmrWalkInputHook?.Dispose();
+            bmrWalkInputHook = null;
+        }
+    }
+
+    private unsafe void BmrWalkInputDetour(
+        nint self, float* sumLeft, float* sumForward, float* sumTurnLeft,
+        byte* haveBackwardOrStrafe, byte* unknown, byte additiveInput)
+    {
+        try
+        {
+            if (potFateMovementDirection is { } direction)
+                TryInjectBmrMovementDirection(direction);
+        }
+        catch
+        {
+            ResetBmrMovementReflection();
+        }
+        finally
+        {
+            bmrWalkInputHook!.Original(
+                self,
+                sumLeft,
+                sumForward,
+                sumTurnLeft,
+                haveBackwardOrStrafe,
+                unknown,
+                additiveInput);
+        }
+    }
+
+    private bool TryInjectBmrMovementDirection(Vector3 direction)
+    {
+        try
+        {
+            if (!TryResolveBmrMovementOverride(out var movement, out var desiredDirectionField))
+                return false;
+
+            var current = desiredDirectionField.GetValue(movement);
+            var currentIsOurs = ReferenceEquals(movement, lastInjectedBmrMovementInstance) &&
+                                current is Vector3 currentDirection &&
+                                lastInjectedBmrDirection is { } lastDirection &&
+                                Vector3.DistanceSquared(currentDirection, lastDirection) <= 0.0001f;
+            if (current != null && !currentIsOurs)
+                return false;
+
+            desiredDirectionField.SetValue(movement, direction);
+            lastInjectedBmrDirection = direction;
+            lastInjectedBmrMovementInstance = movement;
+            return true;
+        }
+        catch
+        {
+            ResetBmrMovementReflection();
+            return false;
+        }
+    }
+
+    private bool TryResolveBmrMovementOverride(out object movement, out FieldInfo desiredDirectionField)
+    {
+        movement = null!;
+        desiredDirectionField = null!;
+
+        if (bmrMovementInstanceField?.GetValue(null) is { } cachedMovement &&
+            bmrDesiredDirectionField != null)
+        {
+            movement = cachedMovement;
+            desiredDirectionField = bmrDesiredDirectionField;
+            return true;
+        }
+
+        ResetBmrMovementReflection();
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (assembly.GetName().Name != "BossModReborn") continue;
+
+            var movementType = assembly.GetType("BossMod.MovementOverride");
+            const BindingFlags staticFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            const BindingFlags instanceFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            var instanceField = movementType?.GetField("Instance", staticFlags);
+            var desiredField = movementType?.GetField("DesiredDirection", instanceFlags);
+            if (instanceField?.GetValue(null) is not { } resolvedMovement || desiredField == null)
+                continue;
+
+            bmrMovementInstanceField = instanceField;
+            bmrDesiredDirectionField = desiredField;
+            movement = resolvedMovement;
+            desiredDirectionField = desiredField;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void ResetBmrMovementReflection()
+    {
+        bmrMovementInstanceField = null;
+        bmrDesiredDirectionField = null;
     }
 
     private void MaintainBmrAiSuppression()
@@ -3170,9 +3378,40 @@ internal sealed class OccultPotFeature : IDisposable
                 Vector3[] remaining;
                 if (!string.IsNullOrEmpty(digDirection))
                 {
-                    nextDirection = digDirection;
-                    remaining = ResolveDigPositions(territory, regionKey, digDirection);
-                    autoDigStatus = $"宝箱在{digDirection}方向，继续定位";
+                    var from = DService.Instance().ObjectTable.LocalPlayer?.Position ?? positions[index];
+                    var previousRemaining = positions[(index + 1)..];
+                    var refined = OccultData.RefinePositionsByDirection(
+                        previousRemaining,
+                        from,
+                        digDirection);
+
+                    if (refined.Length != 0)
+                    {
+                        nextDirection = digDirection;
+                        remaining = OrderDigPositions(
+                            territory,
+                            regionKey,
+                            digDirection,
+                            refined,
+                            from);
+                        autoDigStatus = $"宝箱在{digDirection}方向，继续定位";
+                        DService.Instance().Log.Information(
+                            $"[OccultPotNotifier] Refined remaining treasure candidates: " +
+                            $"direction={digDirection}, before={previousRemaining.Length}, after={remaining.Length}");
+                    }
+                    else
+                    {
+                        remaining = OrderDigPositions(
+                            territory,
+                            regionKey,
+                            direction,
+                            previousRemaining,
+                            from);
+                        autoDigStatus = $"{digDirection}方向未匹配，保留剩余候选";
+                        DService.Instance().Log.Warning(
+                            $"[OccultPotNotifier] Treasure direction matched no remaining candidates; " +
+                            $"direction={digDirection}, retained={remaining.Length}");
+                    }
                 }
                 else
                 {
