@@ -1068,7 +1068,9 @@ internal sealed partial class OccultPotFeature
         crossDCTargetWorld = string.Empty;
         crossDCTargetTerritory = territory;
         crossDCReason      = "查询中…";
-        _ = CrossDCQueryAsync(territory);
+        var islandTimeLeft = GetIslandTimeLeftSeconds();
+        var forceTravel = CrossDCRoutingPolicy.ShouldForceTravel(islandTimeLeft);
+        _ = CrossDCQueryAsync(territory, forceTravel, islandTimeLeft);
     }
 
 
@@ -1088,7 +1090,7 @@ internal sealed partial class OccultPotFeature
         };
     }
 
-    private async Task CrossDCQueryAsync(uint territory)
+    private async Task CrossDCQueryAsync(uint territory, bool forceTravel, float? islandTimeLeft)
     {
         try
         {
@@ -1101,7 +1103,7 @@ internal sealed partial class OccultPotFeature
 
             var now  = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var seen = new HashSet<ushort>();
-            var best = ((ushort)0, long.MaxValue);
+            var candidates = new List<CrossDCCandidate>();
 
             foreach (var row in rows)
             {
@@ -1109,23 +1111,41 @@ internal sealed partial class OccultPotFeature
                 if (!CrossDCWorlds.ContainsKey(dc) || !seen.Add(dc)) continue;
 
                 var remaining = PredictRemaining(row.PotHistory, now);
-                if (remaining <= 300) continue;
-                if (remaining < best.Item2) best = (dc, remaining);
+                candidates.Add(new CrossDCCandidate(dc, remaining));
             }
 
-            if (best.Item1 == 0)
-                crossDCReason = seen.Count == 0 ? "查询到 0 个大区数据" : $"各大区罐子均 ≤5 分钟(已查{seen.Count}区)";
-            else if (best.Item1 == currentDC)
-                crossDCReason = $"当前{currentDC}区罐子最近({best.Item2 / 60}分),留守不跨";
-            else
+            var target = CrossDCRoutingPolicy.SelectTarget(currentDC, candidates, forceTravel);
+            if (target is null)
             {
-                crossDCTargetDC    = best.Item1;
+                CrossDCCandidate? bestOverall = null;
+                var hasEligibleOther = false;
+                foreach (var candidate in candidates)
+                {
+                    if (candidate.RemainingSeconds is <= 300 or long.MaxValue) continue;
+                    if (candidate.DataCenter != currentDC) hasEligibleOther = true;
+                    if (bestOverall is null || candidate.RemainingSeconds < bestOverall.Value.RemainingSeconds)
+                        bestOverall = candidate;
+                }
 
-                crossDCTargetWorld = best.Item1 == homeDC && !string.IsNullOrEmpty(homeWorld)
-                                         ? homeWorld
-                                         : CrossDCWorlds[best.Item1];
-                crossDCReason = $"→ {crossDCTargetWorld}({best.Item2 / 60}分)";
+                crossDCReason = forceTravel && !hasEligibleOther
+                                    ? $"岛内剩余 {Math.Floor(islandTimeLeft!.Value / 60)} 分钟，但其他大区均无 >5 分钟罐子"
+                                    : seen.Count == 0
+                                        ? "查询到 0 个大区数据"
+                                        : bestOverall is null
+                                            ? $"各大区罐子均 ≤5 分钟(已查{seen.Count}区)"
+                                            : $"当前{currentDC}区罐子最近({bestOverall.Value.RemainingSeconds / 60}分),留守不跨";
+                return;
             }
+
+            crossDCTargetDC = target.Value.DataCenter;
+
+            crossDCTargetWorld = target.Value.DataCenter == homeDC && !string.IsNullOrEmpty(homeWorld)
+                                     ? homeWorld
+                                     : CrossDCWorlds[target.Value.DataCenter];
+            var forceReason = forceTravel
+                                  ? $"岛内剩余 {Math.Floor(islandTimeLeft!.Value / 60)} 分钟，"
+                                  : string.Empty;
+            crossDCReason = $"{forceReason}→ {crossDCTargetWorld}({target.Value.RemainingSeconds / 60}分)";
         }
         catch (Exception ex)
         {
@@ -1135,6 +1155,15 @@ internal sealed partial class OccultPotFeature
         {
             crossDCQuerying = false;
         }
+    }
+
+    private static unsafe float? GetIslandTimeLeftSeconds()
+    {
+        var eventFramework = EventFramework.Instance();
+        var contentDirector = eventFramework == null ? null : eventFramework->GetContentDirector();
+        return contentDirector != null && contentDirector->ContentTimeLeft > 0
+                   ? contentDirector->ContentTimeLeft
+                   : null;
     }
 
     private static long PredictRemaining(string potHistory, long now)

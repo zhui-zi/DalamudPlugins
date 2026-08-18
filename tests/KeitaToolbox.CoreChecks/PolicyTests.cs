@@ -8,6 +8,40 @@ namespace KeitaToolbox.CoreChecks;
 public sealed class PolicyTests
 {
     [TestMethod]
+    public void CrossDCRoutingForcesAnotherDataCenterWhenIslandTimeIsLow()
+    {
+        CrossDCCandidate[] candidates =
+        [
+            new(101, 600),
+            new(102, 900),
+            new(103, 1_200),
+        ];
+
+        Assert.IsNull(CrossDCRoutingPolicy.SelectTarget(101, candidates, false));
+        Assert.AreEqual(
+            new CrossDCCandidate(102, 900),
+            CrossDCRoutingPolicy.SelectTarget(101, candidates, true));
+        Assert.AreEqual(
+            new CrossDCCandidate(101, 600),
+            CrossDCRoutingPolicy.SelectTarget(103, candidates, false));
+        Assert.IsTrue(CrossDCRoutingPolicy.ShouldForceTravel(5_399));
+        Assert.IsFalse(CrossDCRoutingPolicy.ShouldForceTravel(5_400));
+        Assert.IsFalse(CrossDCRoutingPolicy.ShouldForceTravel(null));
+    }
+
+    [TestMethod]
+    public void CrossDCRoutingDoesNotForceAnExpiredCandidate()
+    {
+        CrossDCCandidate[] candidates =
+        [
+            new(101, 600),
+            new(102, 300),
+        ];
+
+        Assert.IsNull(CrossDCRoutingPolicy.SelectTarget(101, candidates, true));
+    }
+
+    [TestMethod]
     public void AggroAvoidanceBuildsProjectedDetourAroundCircle()
     {
         var source = new[] { new Vector3(0, 0, 0), new Vector3(20, 0, 0) };
@@ -136,17 +170,17 @@ public sealed class PolicyTests
     }
 
     [TestMethod]
-    public void PotFateSupportJobSwitchesOneSecondBeforeStart()
+    public void PotFateSupportJobSwitchesBeforeStartAndRequiresParticipationDuringFate()
     {
         const long spawnTime = 1_000;
 
-        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseNinja(998, spawnTime, false, false, false));
-        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(999, spawnTime, false, false, false));
-        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(1_000, spawnTime, false, false, false));
-        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(1_001, spawnTime, false, false, true));
-        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseNinja(1_031, spawnTime, false, false, true));
-        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(2_000, spawnTime, true, false, true));
-        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(2_000, spawnTime, false, true, true));
+        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseNinja(998, spawnTime, false, false));
+        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(999, spawnTime, false, false));
+        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(1_000, spawnTime, false, false));
+        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(1_001, spawnTime, false, true));
+        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseNinja(1_031, spawnTime, false, true));
+        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseNinja(2_000, spawnTime, false, false));
+        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(2_000, spawnTime, true, false));
     }
 
     [TestMethod]

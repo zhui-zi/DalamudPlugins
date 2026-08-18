@@ -1,7 +1,40 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace KeitaToolbox;
+
+internal readonly record struct CrossDCCandidate(ushort DataCenter, long RemainingSeconds);
+
+internal static class CrossDCRoutingPolicy
+{
+    private const float ForcedTravelThresholdSeconds = 90 * 60;
+
+    internal static bool ShouldForceTravel(float? islandTimeLeftSeconds) =>
+        islandTimeLeftSeconds is > 0 and < ForcedTravelThresholdSeconds;
+
+    internal static CrossDCCandidate? SelectTarget(
+        ushort currentDataCenter,
+        IReadOnlyList<CrossDCCandidate> candidates,
+        bool forceTravel)
+    {
+        CrossDCCandidate? best = null;
+        foreach (var candidate in candidates)
+        {
+            if (candidate.RemainingSeconds is <= 300 or long.MaxValue ||
+                forceTravel && candidate.DataCenter == currentDataCenter ||
+                best is { } currentBest && candidate.RemainingSeconds >= currentBest.RemainingSeconds)
+                continue;
+
+            best = candidate;
+        }
+
+        if (!forceTravel && best?.DataCenter == currentDataCenter)
+            return null;
+
+        return best;
+    }
+}
 
 internal static class AethernetMenuPolicy
 {
@@ -64,11 +97,10 @@ internal static class PotFateSupportJobPolicy
     internal static bool ShouldUseNinja(
         long now,
         long nextSpawnTime,
-        bool potFateActive,
         bool participating,
         bool switchActive)
     {
-        if (potFateActive || participating)
+        if (participating)
             return true;
         if (nextSpawnTime <= 0)
             return false;

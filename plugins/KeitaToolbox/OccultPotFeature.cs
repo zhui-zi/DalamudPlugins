@@ -920,7 +920,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                     config.Save(this);
                 if (config.EnableAutoCrossDC)
                     ImGui.TextColored(KnownColor.Orange.ToVector4(),
-                        "需启用 DR「特殊场景探索进入指令」(/pdrfe) + 快捷跨界传送指令(/pdr worldtravel)；跨大区有崩游戏风险。");
+                        "岛内剩余不足 90 分钟且有可用目标时强制选择其他大区；需启用 /pdrfe 和 /pdr worldtravel；跨区有崩游戏风险。");
 
                 if (ImGui.Checkbox("FATE / CE 后按岛况自动寻宝", ref config.EnableCofferHunt))
                     config.Save(this);
@@ -2527,7 +2527,6 @@ internal sealed partial class OccultPotFeature : IDisposable
         var shouldUseNinja = PotFateSupportJobPolicy.ShouldUseNinja(
             DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             nextSpawnTime,
-            potFateActive,
             participating,
             potFateSupportJobSwitchActive);
         if (!config.AutoSwitchToNinjaDuringPotFate || !shouldUseNinja)
