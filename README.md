@@ -16,6 +16,4 @@ Run `powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1` for the plug
 
 ## License
 
-Copyright (c) 2026 zhui-zi.
-
-Project source is licensed under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](LICENSE) (`CC-BY-NC-SA-4.0`). Commercial use is prohibited, and distributed adaptations must remain under the same license. Bundled third-party components remain subject to their respective licenses.
+Project source is licensed under the [MIT License](LICENSE). Bundled third-party components remain subject to their respective licenses.
