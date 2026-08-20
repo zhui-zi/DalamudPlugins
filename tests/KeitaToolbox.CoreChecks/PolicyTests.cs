@@ -260,4 +260,55 @@ public sealed class PolicyTests
         Assert.AreEqual(3f, CombatUtilityPolicy.GetFrontlineRangeBonus(123, true, false, 40f));
         Assert.AreEqual(1.5f, CombatUtilityPolicy.GetFrontlineRangeBonus(123, true, false, 1.5f));
     }
+
+    [TestMethod]
+    public void KnockbackModesApplyExpectedMovementAndLockTime()
+    {
+        var blocked = AdvancedUtilityPolicy.AdjustKnockback(
+            KnockbackHandlingMode.Block,
+            1.25f,
+            20f,
+            1f);
+        Assert.IsTrue(blocked.Suppress);
+
+        var reversed = AdvancedUtilityPolicy.AdjustKnockback(
+            KnockbackHandlingMode.Reverse,
+            1.25f,
+            20f,
+            1f);
+        Assert.AreEqual(-1.25f, reversed.Rotation);
+        Assert.AreEqual(21f, reversed.Distance);
+
+        var scaled = AdvancedUtilityPolicy.AdjustKnockback(
+            KnockbackHandlingMode.DistanceScale,
+            1.25f,
+            20f,
+            0.25f);
+        Assert.AreEqual(5f, scaled.Distance);
+        Assert.AreEqual(0f, AdvancedUtilityPolicy.AdjustKnockbackLockTime(
+            KnockbackHandlingMode.Instant,
+            3f));
+        Assert.AreEqual(0.5f, AdvancedUtilityPolicy.AdjustKnockbackLockTime(
+            KnockbackHandlingMode.Fast,
+            3f));
+        Assert.AreEqual(0.8f, AdvancedUtilityPolicy.AdjustKnockbackLockTime(
+            KnockbackHandlingMode.Normal,
+            3f));
+    }
+
+    [TestMethod]
+    public void SprintInterceptionMatchesBothActionRepresentations()
+    {
+        Assert.IsTrue(AdvancedUtilityPolicy.IsSprintRequest(5, 4));
+        Assert.IsTrue(AdvancedUtilityPolicy.IsSprintRequest(1, 3));
+        Assert.IsFalse(AdvancedUtilityPolicy.IsSprintRequest(1, 4));
+    }
+
+    [TestMethod]
+    public void HeartbeatRefreshUsesShortDutyRecoveryInterval()
+    {
+        Assert.AreEqual(10_000, AdvancedUtilityPolicy.GetHeartbeatIntervalMs(true, true));
+        Assert.AreEqual(140_000, AdvancedUtilityPolicy.GetHeartbeatIntervalMs(true, false));
+        Assert.AreEqual(140_000, AdvancedUtilityPolicy.GetHeartbeatIntervalMs(false, true));
+    }
 }

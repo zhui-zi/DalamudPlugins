@@ -9,6 +9,7 @@
   <ItemGroup>
     <Compile Include="..\..\plugins\KeitaToolbox\AutomationPolicies.cs" Link="AutomationPolicies.cs" />
     <Compile Include="..\..\plugins\KeitaToolbox\AggroAvoidancePolicy.cs" Link="AggroAvoidancePolicy.cs" />
+    <Compile Include="..\..\plugins\KeitaToolbox\AdvancedUtilityPolicy.cs" Link="AdvancedUtilityPolicy.cs" />
     <Compile Include="..\..\plugins\KeitaToolbox\DeferredScheduler.cs" Link="DeferredScheduler.cs" />
     <Compile Include="..\..\plugins\KeitaToolbox\PluginSwitchingPolicy.cs" Link="PluginSwitchingPolicy.cs" />
   </ItemGroup>

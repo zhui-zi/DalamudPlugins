@@ -199,6 +199,13 @@ public sealed class AdvancedToolsSettings
     public bool SelfResurrect { get; set; }
     public bool NoFall { get; set; }
     public bool AntiKnockback { get; set; }
+    public KnockbackHandlingMode AntiKnockbackMode { get; set; } = KnockbackHandlingMode.Block;
+    public float AntiKnockbackDistanceMultiplier { get; set; } = 1f;
+    public bool JumpRestrictionImmunity { get; set; }
+    public bool LocalFlight { get; set; }
+    public bool ImmediateSprint { get; set; }
+    public bool KeepHeartbeat { get; set; }
+    public bool KeepHeartbeatDisableInDuty { get; set; } = true;
     public bool ZOffset { get; set; }
     public float ZOffsetValue { get; set; }
     public bool DeepDungeonZOffsetMode { get; set; }

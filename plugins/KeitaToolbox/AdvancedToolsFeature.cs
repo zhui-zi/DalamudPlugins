@@ -14,7 +14,7 @@ using LuminaAction = Lumina.Excel.Sheets.Action;
 
 namespace KeitaToolbox;
 
-internal sealed unsafe class AdvancedToolsFeature : IDisposable
+internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
 {
     private const int DiveTeleportOpcode = 991;
 
@@ -54,7 +54,7 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
     private delegate long SkillPostActionMoveDelegate(long arg1);
     private delegate float ActionRangeDelegate(uint actionId);
     private delegate long FallCheckDelegate(long arg1, uint flags);
-    private delegate void KnockbackDelegate(
+    private delegate byte KnockbackDelegate(
         nint gameObject,
         float rotation,
         float distance,
@@ -171,11 +171,13 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             "combat movement Z offset",
             CombatMovementSignature,
             CombatMovementDetour);
+        InitializeSystemUtilities();
         UpdateHookStates();
     }
 
     public void Dispose()
     {
+        DisposeSystemUtilities();
         combatMovementHook?.Dispose();
         normalMovementHook?.Dispose();
         statusPacketHook?.Dispose();
@@ -262,12 +264,16 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             Plugin.Config.Advanced.NoFall,
             value => Plugin.Config.Advanced.NoFall = value);
         if (DrawToggle(
-                "防击退",
+                "自动防击退",
                 Plugin.Config.Advanced.AntiKnockback,
                 value => Plugin.Config.Advanced.AntiKnockback = value))
         {
             UpdateHookStates();
         }
+        if (Plugin.Config.Advanced.AntiKnockback)
+            DrawKnockbackSettings();
+
+        DrawSystemUtilitiesSettings();
 
         var zOffset = Plugin.Config.Advanced.ZOffset;
         if (ImGui.Checkbox("Z 轴偏移", ref zOffset))
@@ -584,7 +590,7 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         return noFallHook!.Original(arg1, flags);
     }
 
-    private void AntiKnockbackDetour(
+    private byte AntiKnockbackDetour(
         nint gameObject,
         float rotation,
         float distance,
@@ -593,9 +599,20 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
         int arg6)
     {
         if (Enabled(settings => settings.AntiKnockback))
-            distance = 0f;
+        {
+            var adjustment = AdvancedUtilityPolicy.AdjustKnockback(
+                Plugin.Config.Advanced.AntiKnockbackMode,
+                rotation,
+                distance,
+                Plugin.Config.Advanced.AntiKnockbackDistanceMultiplier);
+            if (adjustment.Suppress)
+                return 0;
 
-        antiKnockbackHook!.Original(
+            rotation = adjustment.Rotation;
+            distance = adjustment.Distance;
+        }
+
+        return antiKnockbackHook!.Original(
             gameObject,
             rotation,
             distance,
@@ -672,6 +689,7 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
     public void UpdateMouseTeleport()
     {
         SuppressInvincibilityDiveAnimation();
+        UpdateHeartbeat();
 
         if (!mouseTeleportArmed)
             return;
@@ -915,6 +933,7 @@ internal sealed unsafe class AdvancedToolsFeature : IDisposable
             Plugin.Config.Advanced.DeepDungeonZOffsetMode;
         SetHookEnabled(normalMovementHook, deepDungeonZOffsetEnabled);
         SetHookEnabled(combatMovementHook, deepDungeonZOffsetEnabled);
+        UpdateSystemUtilityStates(advancedEnabled);
         if (!advancedEnabled)
         {
             diveTeleportContext = nint.Zero;
