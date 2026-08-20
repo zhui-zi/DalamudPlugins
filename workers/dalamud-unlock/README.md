@@ -14,8 +14,8 @@ Set `TOOLBOX_PASSWORD_SHA256` as an encrypted Worker secret. Its value is the
 lowercase SHA-256 digest of the unlock password. Never commit the password or
 digest.
 
-The custom domain is declared in `wrangler.jsonc`. This Worker is independent
-from the legacy toolbox unlock Worker and does not proxy to it.
+The custom domain is declared in `wrangler.jsonc`. This Worker operates
+independently and does not proxy requests to another service.
 
 ## Commands
 

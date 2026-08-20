@@ -6,7 +6,7 @@ Subscription URL:
 
 ## Plugins
 
-- **Keita Toolbox** - Combines AEAssist startup management, duty and recruitment automation, the full Occult Crescent Magic Pot Assistant, plugin and map gearset switching, trade protection, IME cleanup, portrait synchronization, and advanced movement and combat utilities.
+- **Keita Toolbox** - Provides AEAssist startup management, duty and recruitment automation, the full Occult Crescent Magic Pot Assistant, plugin and map gearset switching, trade protection, IME cleanup, portrait synchronization, and advanced movement and combat utilities.
 
 Magic Pot automation uses DailyRoutines for travel and duty commands, BOCCHI for combat, and the existing AEAssist, vnavmesh, Lifestream, and EdgeTTS integrations.
 

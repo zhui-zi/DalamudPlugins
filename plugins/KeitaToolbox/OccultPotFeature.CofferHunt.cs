@@ -57,7 +57,7 @@ namespace KeitaToolbox;
 
 internal sealed partial class OccultPotFeature
 {
-    #region DailyRoutines coffer hunt between Magic Pot cycles
+    #region Coffer hunt between Magic Pot cycles
 
     private void CaptureCofferHuntScan(int bronzeChests, int silverChests)
     {
@@ -71,7 +71,7 @@ internal sealed partial class OccultPotFeature
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var remaining = nextSpawnTime > 0 ? $"{nextSpawnTime - now}s" : "unknown";
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Treasure Sight scan received: " +
+            $"[KeitaToolbox.MagicPot] Treasure Sight scan received: " +
             $"silver={silverChests}, bronze={bronzeChests}, Magic Pot remaining={remaining}");
     }
 
@@ -168,7 +168,7 @@ internal sealed partial class OccultPotFeature
             return true;
         });
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Manual DailyRoutines {routeName} treasure hunt dispatched at {localPlayer.Position:F2}; " +
+            $"[KeitaToolbox.MagicPot] Manual DailyRoutines {routeName} treasure hunt dispatched at {localPlayer.Position:F2}; " +
             $"BOCCHI stop={bocchiStopMode}");
     }
 
@@ -195,7 +195,7 @@ internal sealed partial class OccultPotFeature
     {
         drOuterRouteActive = Random.Shared.Next(2) == 1;
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] DailyRoutines treasure route selected: " +
+            $"[KeitaToolbox.MagicPot] DailyRoutines treasure route selected: " +
             $"{(drOuterRouteActive ? "outer" : "inner")}");
     }
 
@@ -220,7 +220,7 @@ internal sealed partial class OccultPotFeature
         {
             var bocchiStopMode = EmergencyStopBocchi();
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] DR treasure hunt preparation; BOCCHI stop={bocchiStopMode}");
+                $"[KeitaToolbox.MagicPot] DR treasure hunt preparation; BOCCHI stop={bocchiStopMode}");
             return true;
         });
         autoDigTask.Enqueue(() => { UseReturn(); return true; });
@@ -416,7 +416,7 @@ internal sealed partial class OccultPotFeature
             SendCommand($"/pdr ptreasure {routeAlias}");
 
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] DailyRoutines treasure route dispatched: {(drOuterRouteActive ? "outer" : "inner")}");
+            $"[KeitaToolbox.MagicPot] DailyRoutines treasure route dispatched: {(drOuterRouteActive ? "outer" : "inner")}");
     }
 
     private Func<bool?> WaitArriveUnlessDrStarted(
@@ -567,7 +567,7 @@ internal sealed partial class OccultPotFeature
         preferredDataID = aetheryte.DataID;
         config.Save(this);
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Remembered DR treasure start aetheryte: " +
+            $"[KeitaToolbox.MagicPot] Remembered DR treasure start aetheryte: " +
             $"territory={cofferHuntTerritory}, name={aetheryte.Name}, dataID={aetheryte.DataID}");
     }
 
@@ -577,7 +577,7 @@ internal sealed partial class OccultPotFeature
         int attemptCount,
         string reason) =>
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] DR treasure start candidate skipped: " +
+            $"[KeitaToolbox.MagicPot] DR treasure start candidate skipped: " +
             $"route={(drOuterRouteActive ? "outer" : "inner")}, attempt={attempt}/{attemptCount}, " +
             $"name={aetheryte.Name}, dataID={aetheryte.DataID}, reason={reason}");
 
@@ -607,7 +607,7 @@ internal sealed partial class OccultPotFeature
                                           : -1;
 
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] DailyRoutines {completedRoute} treasure route completed");
+            $"[KeitaToolbox.MagicPot] DailyRoutines {completedRoute} treasure route completed");
         ClearCofferHuntState();
         autoDigTask?.Abort();
         VnavStop();

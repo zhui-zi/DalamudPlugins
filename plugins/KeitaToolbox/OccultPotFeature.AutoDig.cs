@@ -120,7 +120,7 @@ internal sealed partial class OccultPotFeature
         autoDigTask.Abort();
         BeginBocchiReturnSuppression();
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Magic Pot FATE 0x{target.FateID:X} ended with lure; post-FATE auto-dig started");
+            $"[KeitaToolbox.MagicPot] Magic Pot FATE 0x{target.FateID:X} ended with lure; post-FATE auto-dig started");
         autoDigTask.DelayNext(2000);
         autoDigTask.Enqueue(WaitOutOfCombat(15000));
         autoDigTask.Enqueue(PlayerReady);
@@ -220,7 +220,7 @@ internal sealed partial class OccultPotFeature
             if (autoDigBocchiWaitingForCurrentContent)
             {
                 DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Magic Pot preparation armed; waiting for current FATE/CE to finish, " +
+                    $"[KeitaToolbox.MagicPot] Magic Pot preparation armed; waiting for current FATE/CE to finish, " +
                     $"fate={currentFateID}, ce={currentCriticalEncounterID}, remaining={remaining}s");
             }
         }
@@ -246,7 +246,7 @@ internal sealed partial class OccultPotFeature
 
                 autoDigBocchiWaitingForCurrentContent = false;
                 DService.Instance().Log.Information(
-                    "[OccultPotNotifier] Current FATE/CE completed; Magic Pot preparation is taking control");
+                    "[KeitaToolbox.MagicPot] Current FATE/CE completed; Magic Pot preparation is taking control");
             }
 
             autoDigBocchiStoppedFor = nextSpawnTime;
@@ -254,7 +254,7 @@ internal sealed partial class OccultPotFeature
             autoDigBocchiTravelStopRetryAt = Environment.TickCount64 + 1000;
             var bocchiStopMode = EmergencyStopBocchi();
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Magic Pot preparation takeover; BOCCHI stop={bocchiStopMode}, remaining={remaining}s");
+                $"[KeitaToolbox.MagicPot] Magic Pot preparation takeover; BOCCHI stop={bocchiStopMode}, remaining={remaining}s");
             return;
         }
 
@@ -270,7 +270,7 @@ internal sealed partial class OccultPotFeature
                 autoDigBocchiTravelStopRetriedFor = nextSpawnTime;
                 var bocchiStopMode = EmergencyStopBocchi();
                 DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Magic Pot preparation reclaimed a new BOCCHI FATE/CE trip; BOCCHI stop={bocchiStopMode}");
+                    $"[KeitaToolbox.MagicPot] Magic Pot preparation reclaimed a new BOCCHI FATE/CE trip; BOCCHI stop={bocchiStopMode}");
             }
 
             return;
@@ -905,7 +905,7 @@ internal sealed partial class OccultPotFeature
                             from);
                         autoDigStatus = $"宝箱在{digDirection}方向，继续定位";
                         DService.Instance().Log.Information(
-                            $"[OccultPotNotifier] Refined remaining treasure candidates: " +
+                            $"[KeitaToolbox.MagicPot] Refined remaining treasure candidates: " +
                             $"direction={digDirection}, before={previousRemaining.Length}, after={remaining.Length}");
                     }
                     else
@@ -918,7 +918,7 @@ internal sealed partial class OccultPotFeature
                             from);
                         autoDigStatus = $"{digDirection}方向未匹配，保留剩余候选";
                         DService.Instance().Log.Warning(
-                            $"[OccultPotNotifier] Treasure direction matched no remaining candidates; " +
+                            $"[KeitaToolbox.MagicPot] Treasure direction matched no remaining candidates; " +
                             $"direction={digDirection}, retained={remaining.Length}");
                     }
                 }
@@ -1815,7 +1815,7 @@ internal sealed partial class OccultPotFeature
 
             if (!undergroundDangerActive)
                 DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Enter underground danger route: {position.X:F2}, {position.Y:F2}, {position.Z:F2}");
+                    $"[KeitaToolbox.MagicPot] Enter underground danger route: {position.X:F2}, {position.Y:F2}, {position.Z:F2}");
             BeginUndergroundDangerMode();
             return true;
         });
@@ -1843,7 +1843,7 @@ internal sealed partial class OccultPotFeature
                 VnavStop();
                 autoDigStatus = "危险区：平滑返回地表";
                 DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Smooth surface return started: Y={startPacketHeight:F2} -> {position.Y:F2}; " +
+                    $"[KeitaToolbox.MagicPot] Smooth surface return started: Y={startPacketHeight:F2} -> {position.Y:F2}; " +
                     $"depth={position.Y - startPacketHeight:F2}");
             }
 
@@ -1886,7 +1886,7 @@ internal sealed partial class OccultPotFeature
 
             EndUndergroundDangerMode();
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Smooth surface return completed: {position.X:F2}, {position.Y:F2}, {position.Z:F2}");
+                $"[KeitaToolbox.MagicPot] Smooth surface return completed: {position.X:F2}, {position.Y:F2}, {position.Z:F2}");
             return true;
         });
     }
@@ -1973,7 +1973,7 @@ internal sealed partial class OccultPotFeature
     private unsafe void EndUndergroundDangerMode()
     {
         if (undergroundDangerActive)
-            DService.Instance().Log.Information("[OccultPotNotifier] Leave underground danger route");
+            DService.Instance().Log.Information("[KeitaToolbox.MagicPot] Leave underground danger route");
         undergroundDangerActive = false;
         allowUndergroundPositionUpdate = false;
         undergroundPacketHeight = null;
@@ -2132,7 +2132,7 @@ internal sealed partial class OccultPotFeature
 
             undergroundTestSurfacePosition = player.Position;
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Enter underground test: {player.Position.X:F2}, {player.Position.Y:F2}, {player.Position.Z:F2}");
+                $"[KeitaToolbox.MagicPot] Enter underground test: {player.Position.X:F2}, {player.Position.Y:F2}, {player.Position.Z:F2}");
             BeginUndergroundDangerMode();
             return true;
         });
@@ -2303,7 +2303,7 @@ internal sealed partial class OccultPotFeature
 
     private bool FailUndergroundTest(string message)
     {
-        DService.Instance().Log.Warning($"[OccultPotNotifier] {message}");
+        DService.Instance().Log.Warning($"[KeitaToolbox.MagicPot] {message}");
         StopUndergroundTest(false);
         NotifyHelper.Instance().NotificationWarning(message);
         return true;
@@ -2333,7 +2333,7 @@ internal sealed partial class OccultPotFeature
                         undergroundTestSurfacePosition.Y,
                         localPlayer.Position.Z),
                     moveType).Send();
-                DService.Instance().Log.Information("[OccultPotNotifier] Underground test restored surface position");
+                DService.Instance().Log.Information("[KeitaToolbox.MagicPot] Underground test restored surface position");
             }
             finally
             {
@@ -2475,7 +2475,7 @@ internal sealed partial class OccultPotFeature
                     blockedBy       = currentBlock;
                     blockedDeadline = now + MountBlockedTimeoutMS;
                     DService.Instance().Log.Information(
-                        $"[OccultPotNotifier] Mount wait blocked by {currentBlock}");
+                        $"[KeitaToolbox.MagicPot] Mount wait blocked by {currentBlock}");
                 }
 
                 if (now >= blockedDeadline)
@@ -2486,7 +2486,7 @@ internal sealed partial class OccultPotFeature
             if (!string.IsNullOrEmpty(blockedBy))
             {
                 DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Mount wait resumed after {blockedBy}");
+                    $"[KeitaToolbox.MagicPot] Mount wait resumed after {blockedBy}");
                 blockedBy       = string.Empty;
                 blockedDeadline = 0;
             }
@@ -2523,13 +2523,13 @@ internal sealed partial class OccultPotFeature
     private bool FailAutoDigMovement(string message)
     {
         var retryScheduled = TryScheduleAutoDigTravelRetry();
-        DService.Instance().Log.Warning($"[OccultPotNotifier] {message}");
+        DService.Instance().Log.Warning($"[KeitaToolbox.MagicPot] {message}");
         AbortAutoDig();
         if (retryScheduled)
         {
             autoDigStartedFor = -1;
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Auto-dig travel retry scheduled in {AutoDigTravelRetryDelayMS}ms");
+                $"[KeitaToolbox.MagicPot] Auto-dig travel retry scheduled in {AutoDigTravelRetryDelayMS}ms");
             NotifyHelper.Instance().NotificationInfo($"{message}，5 秒后重试");
         }
         else
@@ -2650,7 +2650,7 @@ internal sealed partial class OccultPotFeature
             {
                 RestoreMagicPotCofferInteractionPosition();
                 DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Magic Pot coffer opened: 0x{treasureEntityId:X8}");
+                    $"[KeitaToolbox.MagicPot] Magic Pot coffer opened: 0x{treasureEntityId:X8}");
                 return true;
             }
 
@@ -2782,7 +2782,7 @@ internal sealed partial class OccultPotFeature
         if (undergroundDangerActive)
         {
             DService.Instance().Log.Warning(
-                "[OccultPotNotifier] Blocked dismount while underground danger route is active");
+                "[KeitaToolbox.MagicPot] Blocked dismount while underground danger route is active");
             return;
         }
 
@@ -2910,7 +2910,7 @@ internal sealed partial class OccultPotFeature
         targetSystem->Target = gameObject;
         targetSystem->InteractWithObject(gameObject, false);
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Magic Pot coffer read-bar interaction requested: 0x{treasureEntityId:X8}");
+            $"[KeitaToolbox.MagicPot] Magic Pot coffer read-bar interaction requested: 0x{treasureEntityId:X8}");
         return true;
     }
 
@@ -2936,7 +2936,7 @@ internal sealed partial class OccultPotFeature
                     undergroundPosition,
                     moveType).Send();
                 DService.Instance().Log.Information(
-                    $"[OccultPotNotifier] Magic Pot coffer opened; returned underground to Y={undergroundPosition.Y:F0}");
+                    $"[KeitaToolbox.MagicPot] Magic Pot coffer opened; returned underground to Y={undergroundPosition.Y:F0}");
             }
             finally
             {

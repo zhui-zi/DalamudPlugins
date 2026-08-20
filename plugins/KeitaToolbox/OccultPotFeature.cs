@@ -278,7 +278,7 @@ internal sealed partial class OccultPotFeature : IDisposable
     private const string TrackerBaseURL     = "https://infi.ovh/api/";
     private const string TrackerTable       = "OccultTrackerV3";
     private const string TrackerAnonKey     = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiJ9.Ur6wgi_rD4dr3uLLvbLoaEvfLCu4QFWdrF-uHRtbl_s";
-    private const string TrackerVersion     = "DR-OccultPotNotifier";
+    private const string TrackerVersion     = "KeitaToolbox-MagicPot";
     private const string CrowdsourceBaseURL = "https://ce-crowdsource.atmoomen.top";
     private const int    SyncRefreshSeconds = 60;
     private const int    FastRetrySeconds   = 5;
@@ -481,7 +481,7 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         overlayOpen    = false;
 
-        entry         ??= DService.Instance().DTRBar.Get("KeitaToolbox-OccultPotNotifier");
+        entry         ??= DService.Instance().DTRBar.Get("KeitaToolbox-MagicPot");
         entry.Shown   =   false;
         entry.Tooltip =   "新月岛 魔法罐助手\n左键在地图上标记下一个魔法罐位置 (<flag>)\n右键打开当前岛的众包追踪器";
         entry.OnClick =   OnDtrClick;
@@ -639,7 +639,7 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     public void DrawSettings()
     {
-        ImGui.TextDisabled("启用工具箱版本后，请在 DailyRoutines 中停用同名模块，避免重复提醒或自动操作。");
+        ImGui.TextDisabled("请勿同时启用重复的提醒或自动操作。");
         ImGui.Spacing();
 
         if (!ImGui.BeginTabBar("###OccultPotSettingsTabs")) return;
@@ -1303,7 +1303,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         nextBocchiSuppressAt = Environment.TickCount64 + 1000;
         var bocchiStopMode = EmergencyStopBocchi();
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Magic Pot FATE cleanup; BOCCHI stop={bocchiStopMode}");
+            $"[KeitaToolbox.MagicPot] Magic Pot FATE cleanup; BOCCHI stop={bocchiStopMode}");
     }
 
     private void KeepBocchiReturnSuppressed()
@@ -1653,7 +1653,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         pendingCurrencyConfirmationClicked = true;
         currencyExchangeStatus = $"已自动确认{pending.Spec.Name}兑换，等待库存更新…";
         Plugin.Log.Information(
-            $"[OccultPotNotifier] Auto-confirmed remote currency exchange event={pending.Spec.EventID:X}, item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
+            $"[KeitaToolbox.MagicPot] Auto-confirmed remote currency exchange event={pending.Spec.EventID:X}, item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
     }
 
     private static unsafe void SuppressCurrencyExchangeWindow()
@@ -1734,7 +1734,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                     pendingCurrencyDeadline = now + CurrencyExchangeConfirmTimeoutMS;
                     currencyExchangeStatus = $"已发送{pending.Spec.Name}兑换 ×{pending.Quantity}，等待库存确认…";
                     Plugin.Log.Information(
-                        $"[OccultPotNotifier] Sent remote currency exchange through AgentShop event={pending.Spec.EventID:X}, item={pending.Spec.CurrencyItemID}, shopIndex={itemIndex}, quantity={pending.Quantity}");
+                        $"[KeitaToolbox.MagicPot] Sent remote currency exchange through AgentShop event={pending.Spec.EventID:X}, item={pending.Spec.CurrencyItemID}, shopIndex={itemIndex}, quantity={pending.Quantity}");
                 }
                 catch (Exception ex)
                 {
@@ -1769,7 +1769,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                                              : $"{message}；正在等待下一种货币。";
                 NotifyHelper.Instance().Chat(message);
                 Plugin.Log.Information(
-                    $"[OccultPotNotifier] Confirmed remote currency exchange item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
+                    $"[KeitaToolbox.MagicPot] Confirmed remote currency exchange item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
                 return;
             }
 
@@ -1820,7 +1820,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                 pendingCurrencyConfirmationClicked = false;
                 currencyExchangeStatus = $"正在建立{request.Spec.Name}兑换会话…";
                 Plugin.Log.Information(
-                    $"[OccultPotNotifier] Started remote currency exchange npc={CurrencyExchangeNpcDataID}, player={LocalPlayerState.EntityID:X}, event={request.Spec.EventID:X}, item={request.Spec.CurrencyItemID}, quantity={quantity}");
+                    $"[KeitaToolbox.MagicPot] Started remote currency exchange npc={CurrencyExchangeNpcDataID}, player={LocalPlayerState.EntityID:X}, event={request.Spec.EventID:X}, item={request.Spec.CurrencyItemID}, quantity={quantity}");
             }
             catch (Exception ex)
             {
@@ -1847,7 +1847,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         nextCurrencyExchangeAt = 0;
         currencyExchangeStatus = "魔法罐自动化期间已暂停兑换。";
         Plugin.Log.Information(
-            $"[OccultPotNotifier] Paused remote currency exchange during Magic Pot automation item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
+            $"[KeitaToolbox.MagicPot] Paused remote currency exchange during Magic Pot automation item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
     }
 
     private void FailCurrencyExchange(
@@ -1870,10 +1870,10 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         if (exception == null)
             Plugin.Log.Warning(
-                $"[OccultPotNotifier] Remote currency exchange timed out item={request.Spec.CurrencyItemID}, quantity={request.Quantity}");
+                $"[KeitaToolbox.MagicPot] Remote currency exchange timed out item={request.Spec.CurrencyItemID}, quantity={request.Quantity}");
         else
             Plugin.Log.Error(exception,
-                $"[OccultPotNotifier] Remote currency exchange failed item={request.Spec.CurrencyItemID}, quantity={request.Quantity}");
+                $"[KeitaToolbox.MagicPot] Remote currency exchange failed item={request.Spec.CurrencyItemID}, quantity={request.Quantity}");
     }
 
     private static void CompleteCurrencyExchangeSession(uint eventID)
@@ -1885,7 +1885,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         catch (Exception ex)
         {
             Plugin.Log.Warning(ex,
-                $"[OccultPotNotifier] Failed to complete remote currency exchange session event={eventID:X}");
+                $"[KeitaToolbox.MagicPot] Failed to complete remote currency exchange session event={eventID:X}");
         }
     }
 
@@ -2496,7 +2496,7 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         SendCommand("/bmrai off");
         DService.Instance().Log.Information(
-            "[OccultPotNotifier] Bossmod Reborn AI disabled for Magic Pot FATE");
+            "[KeitaToolbox.MagicPot] Bossmod Reborn AI disabled for Magic Pot FATE");
     }
 
     private void RestoreBmrAiAfterPotFate()
@@ -2516,7 +2516,7 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         SendCommand("/bmrai on");
         DService.Instance().Log.Information(
-            "[OccultPotNotifier] Bossmod Reborn AI restored after Magic Pot FATE");
+            "[KeitaToolbox.MagicPot] Bossmod Reborn AI restored after Magic Pot FATE");
     }
 
     private unsafe void MaintainPotFateSupportJob()
@@ -2562,7 +2562,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             if (!potFateNinjaConfirmed)
                 potFateSupportJobRetry.Start(Environment.TickCount64);
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Magic Pot support job switch armed; previous={currentJob.JobType}");
+                $"[KeitaToolbox.MagicPot] Magic Pot support job switch armed; previous={currentJob.JobType}");
         }
 
         if (currentJob?.JobType == CrescentSupportJobType.Ninja)
@@ -2571,7 +2571,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             {
                 potFateNinjaConfirmed = true;
                 DService.Instance().Log.Information(
-                    "[OccultPotNotifier] Phantom Ninja confirmed for Magic Pot FATE");
+                    "[KeitaToolbox.MagicPot] Phantom Ninja confirmed for Magic Pot FATE");
             }
 
             potFateSupportJobRetry.Clear();
@@ -2582,7 +2582,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (potFateSupportJobRetry.IsExpired(now))
         {
             DService.Instance().Log.Warning(
-                "[OccultPotNotifier] Phantom Ninja switch timed out; suppressing retries until the next Magic Pot FATE");
+                "[KeitaToolbox.MagicPot] Phantom Ninja switch timed out; suppressing retries until the next Magic Pot FATE");
             potFateSupportJobRetry.Clear();
             potFateSupportJobSwitchSuppressed = true;
             return;
@@ -2613,7 +2613,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (!InOccultMapZone)
         {
             DService.Instance().Log.Information(
-                "[OccultPotNotifier] Cleared pending support job restoration after leaving Occult Crescent");
+                "[KeitaToolbox.MagicPot] Cleared pending support job restoration after leaving Occult Crescent");
             ClearPotFateSupportJobSwitch();
             return;
         }
@@ -2632,7 +2632,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             if (currentJob?.JobType != CrescentSupportJobType.Ninja)
             {
                 DService.Instance().Log.Information(
-                    "[OccultPotNotifier] Skipped support job restoration because the Ninja switch was never confirmed");
+                    "[KeitaToolbox.MagicPot] Skipped support job restoration because the Ninja switch was never confirmed");
                 ClearPotFateSupportJobSwitch();
                 return;
             }
@@ -2645,7 +2645,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             currentJob.JobType != previousJob.JobType)
         {
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Skipped support job restoration after a manual change; current={currentJob.JobType}");
+                $"[KeitaToolbox.MagicPot] Skipped support job restoration after a manual change; current={currentJob.JobType}");
             ClearPotFateSupportJobSwitch();
             return;
         }
@@ -2653,7 +2653,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (currentJob?.JobType == previousJob.JobType)
         {
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] Support job restored after Magic Pot FATE; job={previousJob.JobType}");
+                $"[KeitaToolbox.MagicPot] Support job restored after Magic Pot FATE; job={previousJob.JobType}");
             ClearPotFateSupportJobSwitch();
             return;
         }
@@ -2668,7 +2668,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (potFateSupportJobRetry.IsExpired(now))
         {
             DService.Instance().Log.Warning(
-                $"[OccultPotNotifier] Support job restoration timed out; previous={previousJob.JobType}");
+                $"[KeitaToolbox.MagicPot] Support job restoration timed out; previous={previousJob.JobType}");
             ClearPotFateSupportJobSwitch();
             return;
         }
@@ -2702,7 +2702,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         potFateSupportJobRestoring = false;
         potFateSupportJobRetry.Clear();
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Resumed pending support job restoration; previous={previousJob.JobType}");
+            $"[KeitaToolbox.MagicPot] Resumed pending support job restoration; previous={previousJob.JobType}");
     }
 
     private bool ResolvePendingSupportJobRecovery(CrescentSupportJob? currentJob)
@@ -2720,7 +2720,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         }
 
         DService.Instance().Log.Information(
-            $"[OccultPotNotifier] Cleared pending support job restoration because Ninja is no longer active; current={currentJob.JobType}");
+            $"[KeitaToolbox.MagicPot] Cleared pending support job restoration because Ninja is no longer active; current={currentJob.JobType}");
         ClearPotFateSupportJobSwitch();
         return false;
     }
@@ -3185,7 +3185,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         client.DefaultRequestHeaders.Add(
             "Prefer",
             "return=representation, resolution=ignore-duplicates, on_conflict=last_fate");
-        client.DefaultRequestHeaders.Add("User-Agent",    "DailyRoutines-OccultPotNotifier");
+        client.DefaultRequestHeaders.Add("User-Agent",    "KeitaToolbox-MagicPot");
         return client;
     }
 
@@ -4414,7 +4414,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             catch (Exception ex)
             {
                 DService.Instance().Log.Warning(
-                    $"[OccultPotNotifier] BOCCHI stop request failed: {ex.GetType().Name}");
+                    $"[KeitaToolbox.MagicPot] BOCCHI stop request failed: {ex.GetType().Name}");
                 return null;
             }
         }

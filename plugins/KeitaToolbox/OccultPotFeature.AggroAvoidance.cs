@@ -143,7 +143,7 @@ internal sealed partial class OccultPotFeature
                     out var safePath))
             {
                 DService.Instance().Log.Warning(
-                    "[OccultPotNotifier] No fully projected monster-avoidance route was available; keeping the original vnavmesh route");
+                    "[KeitaToolbox.MagicPot] No fully projected monster-avoidance route was available; keeping the original vnavmesh route");
                 northHornAggroSuppressedUntil = now + NorthHornAggroSuppressionMS;
                 return;
             }
@@ -164,7 +164,7 @@ internal sealed partial class OccultPotFeature
             northHornAggroLastProgressAt = now;
             northHornAggroUnavailableLogged = false;
             DService.Instance().Log.Information(
-                $"[OccultPotNotifier] North Horn treasure route avoids {zones.Count} live monster aggro zones with {submittedPath.Count} waypoints");
+                $"[KeitaToolbox.MagicPot] North Horn treasure route avoids {zones.Count} live monster aggro zones with {submittedPath.Count} waypoints");
         }
         catch (Exception ex)
         {
@@ -245,7 +245,7 @@ internal sealed partial class OccultPotFeature
             northHornAggroLastProgressPosition = playerPosition;
             northHornAggroLastProgressAt = now;
             DService.Instance().Log.Warning(
-                "[OccultPotNotifier] Monster-avoidance route stalled; restored the original vnavmesh route for this destination");
+                "[KeitaToolbox.MagicPot] Monster-avoidance route stalled; restored the original vnavmesh route for this destination");
         }
         catch (Exception ex)
         {
@@ -262,7 +262,7 @@ internal sealed partial class OccultPotFeature
         northHornAggroUnavailableLogged = true;
         DService.Instance().Log.Warning(
             ex,
-            "[OccultPotNotifier] North Horn monster avoidance is unavailable; normal vnavmesh movement remains active");
+            "[KeitaToolbox.MagicPot] North Horn monster avoidance is unavailable; normal vnavmesh movement remains active");
     }
 
     private static bool ShouldAvoidNorthHornMob(uint playerLevel, uint mobLevel) =>

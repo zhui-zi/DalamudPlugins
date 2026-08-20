@@ -143,7 +143,6 @@ public sealed partial class Plugin : IDalamudPlugin
             HelpMessage = "打开 Keita 工具箱设置。",
         });
 
-        WarnAboutLegacyPlugins();
         usageTask = SendUsageAsync(usageCancellation.Token);
         Log.Information("Keita Toolbox enabled.");
     }
@@ -403,25 +402,4 @@ public sealed partial class Plugin : IDalamudPlugin
         }
     }
 
-    private static void WarnAboutLegacyPlugins()
-    {
-        foreach (var internalName in new[]
-                 {
-                     "IMEGarbageFix",
-                     "PortraitGearSync",
-                     "AyanoHimituBox",
-                 })
-        {
-            var legacy = PluginInterface.InstalledPlugins.FirstOrDefault(
-                plugin => plugin.InternalName.Equals(
-                    internalName,
-                    StringComparison.OrdinalIgnoreCase));
-            if (legacy?.IsLoaded == true)
-            {
-                Log.Warning(
-                    "Legacy plugin {Plugin} is still loaded. Disable it to avoid duplicate behavior.",
-                    internalName);
-            }
-        }
-    }
 }
