@@ -11,9 +11,10 @@ public sealed partial class Plugin
         DutyFlow,
         PartyAndTrade,
         CharacterAndInterface,
+        MovementAndSystem,
+        CombatAndStatus,
         OccultCrescent,
-        VoidAether,
-        IntegrationsAndAdvanced,
+        Integrations,
     }
 
     private SettingsPage selectedSettingsPage = SettingsPage.DutyFlow;
@@ -25,7 +26,7 @@ public sealed partial class Plugin
         if (!windowOpen)
             return;
 
-        ImGui.SetNextWindowSize(new Vector2(860, 680), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(900, 700), ImGuiCond.FirstUseEver);
         if (!ImGui.Begin("Keita 工具箱", ref windowOpen))
         {
             ImGui.End();
@@ -38,7 +39,7 @@ public sealed partial class Plugin
 
         if (ImGui.BeginChild(
                 "ToolboxSettingsNavigation",
-                new Vector2(170f, 0f),
+                new Vector2(190f, 0f),
                 true))
         {
             ImGui.TextDisabled("设置分类");
@@ -47,9 +48,10 @@ public sealed partial class Plugin
             DrawNavigationItem(SettingsPage.DutyFlow, "副本流程");
             DrawNavigationItem(SettingsPage.PartyAndTrade, "组队与交易");
             DrawNavigationItem(SettingsPage.CharacterAndInterface, "角色与界面");
+            DrawNavigationItem(SettingsPage.MovementAndSystem, "移动与系统");
+            DrawNavigationItem(SettingsPage.CombatAndStatus, "战斗与状态");
             DrawNavigationItem(SettingsPage.OccultCrescent, "新月岛");
-            DrawNavigationItem(SettingsPage.VoidAether, "虚空功能");
-            DrawNavigationItem(SettingsPage.IntegrationsAndAdvanced, "插件与高级");
+            DrawNavigationItem(SettingsPage.Integrations, "插件联动");
         }
         ImGui.EndChild();
 
@@ -57,7 +59,6 @@ public sealed partial class Plugin
         if (ImGui.BeginChild("ToolboxSettingsContent", Vector2.Zero, false))
             DrawSelectedSettingsPage();
         ImGui.EndChild();
-
         ImGui.End();
     }
 
@@ -69,28 +70,7 @@ public sealed partial class Plugin
 
     private void DrawSelectedSettingsPage()
     {
-        var (title, description) = selectedSettingsPage switch
-        {
-            SettingsPage.DutyFlow => (
-                "副本流程",
-                "管理任务开始、结束退出与通关后处理。"),
-            SettingsPage.PartyAndTrade => (
-                "组队与交易",
-                "管理邀请、招募筛选和交易处理。"),
-            SettingsPage.CharacterAndInterface => (
-                "角色与界面",
-                "管理装备套装、即时肖像和输入界面修正。"),
-            SettingsPage.OccultCrescent => (
-                "新月岛",
-                "管理魔法罐提醒、地图标记、自动化与战斗辅助。"),
-            SettingsPage.VoidAether => (
-                "虚空功能",
-                "管理虚空交互、水晶与风脉解锁，以及战场摸点。"),
-            _ => (
-                "插件与高级",
-                "管理外部插件联动、验证监控与高级工具。"),
-        };
-
+        var (title, description) = GetPageInfo(selectedSettingsPage);
         ImGui.TextUnformatted(title);
         ImGui.TextDisabled(description);
         ImGui.Separator();
@@ -110,8 +90,13 @@ public sealed partial class Plugin
                     DrawUnavailable("自动拒绝交易");
                 else
                     autoRefuseTradeFeature.DrawSettings();
+                if (voidAetherFeature == null)
+                    DrawUnavailable("储物与商店服务");
+                else
+                    voidAetherFeature.DrawPartyAndTradeSettings();
                 break;
             case SettingsPage.CharacterAndInterface:
+                DrawFloatingButtonSettings();
                 if (mapGearsetFeature == null)
                     DrawUnavailable("按地图自动切换套装");
                 else
@@ -121,6 +106,35 @@ public sealed partial class Plugin
                 else
                     portraitFeature.DrawSettings();
                 basicFeatures?.DrawImeSettings();
+                if (voidAetherFeature == null)
+                    DrawUnavailable("装备与雇员服务");
+                else
+                    voidAetherFeature.DrawCharacterAndInterfaceSettings();
+                break;
+            case SettingsPage.MovementAndSystem:
+                if (voidAetherFeature == null)
+                    DrawUnavailable("水晶共鸣与风脉解锁");
+                else
+                    voidAetherFeature.DrawMovementAndSystemSettings();
+                if (!DrawProtectedFeatureGate())
+                    break;
+                if (advancedToolsFeature == null)
+                    DrawUnavailable("移动与系统设置");
+                else
+                    advancedToolsFeature.DrawMovementAndSystemSettings();
+                break;
+            case SettingsPage.CombatAndStatus:
+                if (voidAetherFeature == null)
+                    DrawUnavailable("战场摸点");
+                else
+                    voidAetherFeature.DrawCombatAndStatusSettings();
+                if (!DrawProtectedFeatureGate())
+                    break;
+                DrawInstantReturnSettings();
+                if (advancedToolsFeature == null)
+                    DrawUnavailable("战斗与状态设置");
+                else
+                    advancedToolsFeature.DrawCombatUtilitySettings();
                 break;
             case SettingsPage.OccultCrescent:
                 if (occultPotFeature == null)
@@ -128,13 +142,7 @@ public sealed partial class Plugin
                 else
                     occultPotFeature.DrawSettings();
                 break;
-            case SettingsPage.VoidAether:
-                if (voidAetherFeature == null)
-                    DrawUnavailable("虚空功能");
-                else
-                    voidAetherFeature.DrawSettings();
-                break;
-            case SettingsPage.IntegrationsAndAdvanced:
+            case SettingsPage.Integrations:
                 if (aeAssistStartupFeature == null)
                     DrawUnavailable("AEAssist 启动自动化");
                 else
@@ -149,10 +157,35 @@ public sealed partial class Plugin
                 {
                     verificationMonitorFeature.DrawSettings();
                 }
-                DrawProtectedFeatureSettings();
                 break;
         }
     }
+
+    private static (string Title, string Description) GetPageInfo(SettingsPage page) => page switch
+    {
+        SettingsPage.DutyFlow => (
+            "副本流程",
+            "管理任务开始、结束退出与通关后的连续处理。"),
+        SettingsPage.PartyAndTrade => (
+            "组队与交易",
+            "管理邀请、招募筛选、交易保护、部队储物与商店服务。"),
+        SettingsPage.CharacterAndInterface => (
+            "角色与界面",
+            "管理装备套装、即时肖像、输入界面、装备维护与雇员服务。"),
+        SettingsPage.MovementAndSystem => (
+            "移动与系统",
+            "管理移动控制、技能距离、水晶、风脉、位置探索、传送与系统状态。"),
+        SettingsPage.CombatAndStatus => (
+            "战斗与状态",
+            "管理紧急操作、异常状态处理和 PvP 交互。"),
+        SettingsPage.OccultCrescent => (
+            "新月岛",
+            "管理魔法罐提醒、地图标记、自动化与战斗辅助。"),
+        SettingsPage.Integrations => (
+            "插件联动",
+            "管理外部插件启动、自动切换、参数同步与验证监控。"),
+        _ => throw new ArgumentOutOfRangeException(nameof(page), page, null),
+    };
 
     internal static bool DrawFeatureToggle(string label, bool value, Action<bool> setter)
     {
@@ -175,55 +208,59 @@ public sealed partial class Plugin
         ImGui.Spacing();
     }
 
-    private void DrawProtectedFeatureSettings()
+    private static void DrawFloatingButtonSettings()
     {
-        if (PasswordProtectionEnabled && !Config.ProtectedFeaturesUnlocked)
+        if (!ImGui.CollapsingHeader(
+                "工具箱入口",
+                ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        DrawFeatureToggle(
+            "常驻悬浮按钮",
+            Config.Interface.ShowFloatingButton,
+            value => Config.Interface.ShowFloatingButton = value);
+        DrawHelp("使用插件图标显示；左键打开设置，右键拖动位置。关闭后仍可使用 /ktb 打开设置。");
+    }
+
+    private bool DrawProtectedFeatureGate()
+    {
+        if (!PasswordProtectionEnabled || Config.ProtectedFeaturesUnlocked)
+            return true;
+
+        CompleteUnlockRequest();
+        if (!ImGui.CollapsingHeader(
+                "高级功能解锁",
+                ImGuiTreeNodeFlags.DefaultOpen))
+            return false;
+
+        ImGui.TextWrapped(
+            "首次输入工具箱密码即可解锁本机的受保护功能，后续无需再次输入。");
+        ImGui.SetNextItemWidth(300f);
+        var submitted = ImGui.InputText(
+            "密码",
+            ref protectedPassword,
+            128,
+            ImGuiInputTextFlags.Password | ImGuiInputTextFlags.EnterReturnsTrue);
+        ImGui.SameLine();
+        submitted |= ImGui.Button("解锁");
+
+        if (submitted && unlockTask == null)
         {
-            if (!ImGui.CollapsingHeader("受保护的高级工具"))
-                return;
-
-            ImGui.TextWrapped(
-                "首次输入工具箱密码即可解锁本机的受保护高级功能，后续无需再次输入。");
-            CompleteUnlockRequest();
-            ImGui.SetNextItemWidth(300f);
-            var submitted = ImGui.InputText(
-                "密码",
-                ref protectedPassword,
-                128,
-                ImGuiInputTextFlags.Password | ImGuiInputTextFlags.EnterReturnsTrue);
-            ImGui.SameLine();
-            submitted |= ImGui.Button("解锁");
-
-            if (submitted && unlockTask == null)
-            {
-                unlockError = string.Empty;
-                unlockTask = VerifyProtectedPasswordAsync(protectedPassword);
-                protectedPassword = string.Empty;
-            }
-
-            if (!ProtectedFeaturesUnlocked)
-            {
-                if (unlockTask != null)
-                    ImGui.TextDisabled("正在验证……");
-                else if (unlockError.Length > 0)
-                    ImGui.TextColored(new Vector4(1f, 0.35f, 0.35f, 1f), unlockError);
-                DrawHelp(
-                    "密码通过 HTTPS 验证且不会保存，本地仅记录验证成功状态。");
-                return;
-            }
+            unlockError = string.Empty;
+            unlockTask = VerifyProtectedPasswordAsync(protectedPassword);
+            protectedPassword = string.Empty;
         }
 
-        DrawInstantReturnSettings();
-        if (advancedToolsFeature == null)
+        if (!ProtectedFeaturesUnlocked)
         {
-            DrawUnavailable("战斗辅助");
-            DrawUnavailable("高级移动工具");
+            if (unlockTask != null)
+                ImGui.TextDisabled("正在验证……");
+            else if (unlockError.Length > 0)
+                ImGui.TextColored(new Vector4(1f, 0.35f, 0.35f, 1f), unlockError);
+            DrawHelp("密码通过 HTTPS 验证且不会保存，本地仅记录验证成功状态。");
         }
-        else
-        {
-            advancedToolsFeature.DrawCombatUtilitySettings();
-            advancedToolsFeature.DrawSettings();
-        }
+
+        return ProtectedFeaturesUnlocked;
     }
 
     private static void DrawInstantReturnSettings()

@@ -160,6 +160,43 @@ public sealed class PolicyTests
     }
 
     [TestMethod]
+    public void BocchiOwnedBmrAiIsCleanedAfterLeavingCrescent()
+    {
+        var policy = new BocchiBmrCleanupPolicy();
+
+        Assert.IsFalse(policy.Update(true, true, false, true, true, "Idle"));
+        Assert.IsFalse(policy.Update(true, true, true, true, true, "Participating"));
+        Assert.IsTrue(policy.Update(true, false, true, false, true, null));
+        Assert.IsTrue(policy.Update(true, false, true, false, true, null));
+        Assert.IsFalse(policy.Update(true, false, false, false, true, null));
+    }
+
+    [TestMethod]
+    public void PreexistingOrManualBmrAiIsPreservedAfterLeavingCrescent()
+    {
+        var preexisting = new BocchiBmrCleanupPolicy();
+        Assert.IsFalse(preexisting.Update(true, true, true, false, true, "Idle"));
+        Assert.IsFalse(preexisting.Update(true, true, true, true, true, "Participating"));
+        Assert.IsFalse(preexisting.Update(true, false, true, false, true, null));
+
+        var manual = new BocchiBmrCleanupPolicy();
+        Assert.IsFalse(manual.Update(true, true, false, false, true, "Idle"));
+        Assert.IsFalse(manual.Update(true, true, true, false, true, "Idle"));
+        Assert.IsFalse(manual.Update(true, false, true, false, true, null));
+    }
+
+    [TestMethod]
+    public void DisabledBocchiCleanupClearsPendingOwnership()
+    {
+        var policy = new BocchiBmrCleanupPolicy();
+
+        Assert.IsFalse(policy.Update(true, true, false, true, true, "Idle"));
+        Assert.IsFalse(policy.Update(true, true, true, true, true, "InCriticalEncounter"));
+        Assert.IsFalse(policy.Update(false, false, true, false, true, null));
+        Assert.IsFalse(policy.Update(true, false, true, false, true, null));
+    }
+
+    [TestMethod]
     public void AutoInviteRequiresFreshAuthorityAndPartyState()
     {
         Assert.IsTrue(AutoInvitePolicy.CanInvite(true, true, false, true, true, 0, false, false, false));

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Addon.Lifecycle;
@@ -24,6 +25,10 @@ internal sealed unsafe class BasicFeatures : IDisposable
     private const string RecruitmentMarker = "招募信息为：";
     private const long ImeCleanupIntervalMs = 100;
     private const long PluginSwitchReconcileIntervalMs = 1_000;
+    private const long BmrCleanupPollIntervalMs = 100;
+    private const long BmrCleanupRetryIntervalMs = 1_000;
+    private const uint OccultSouthTerritory = 1252;
+    private const uint OccultNorthTerritory = 1346;
     private const uint NiCompositionStr = 0x0015;
     private const uint CpsCancel = 0x0004;
 
@@ -31,6 +36,7 @@ internal sealed unsafe class BasicFeatures : IDisposable
     private readonly Dictionary<MapRule, MapRuleEditorState> mapRuleEditors = [];
     private readonly Dictionary<string, bool> pluginSwitcherOriginalStates =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly BocchiBmrCleanupPolicy bocchiBmrCleanupPolicy = new();
     private string pendingRecruitment = string.Empty;
     private string commenceSearch = string.Empty;
     private string partyFinderInput = string.Empty;
@@ -39,6 +45,8 @@ internal sealed unsafe class BasicFeatures : IDisposable
     private uint lastJobId;
     private long nextImeCleanupAt;
     private long nextPluginSwitchReconcileAt;
+    private long nextBmrCleanupPollAt;
+    private long nextBmrCleanupAttemptAt;
     private nint gameWindow;
     private bool? lastInPvp;
     private MapRule? appliedMapRule;
@@ -117,6 +125,7 @@ internal sealed unsafe class BasicFeatures : IDisposable
     private void OnUpdate(IFramework _)
     {
         UpdateBmraiDistance();
+        UpdateBocchiBmrCleanup();
         UpdateImeCleanup();
         UpdatePluginSwitcher();
     }
@@ -159,6 +168,51 @@ internal sealed unsafe class BasicFeatures : IDisposable
         {
             Plugin.Log.Warning(ex, "Invalid bmrai command format.");
         }
+    }
+
+    private void UpdateBocchiBmrCleanup()
+    {
+        var featureEnabled = Plugin.Config.Bmrai.CleanupBocchiAiOnCrescentExit;
+        if (!featureEnabled)
+        {
+            bocchiBmrCleanupPolicy.Update(false, false, false, false, false, null);
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (now < nextBmrCleanupPollAt)
+            return;
+        nextBmrCleanupPollAt = now + BmrCleanupPollIntervalMs;
+
+        if (!BocchiBmrRuntime.TryGetBmrEnabled(out var bmrEnabled))
+            return;
+
+        var territory = Plugin.ClientState.TerritoryType;
+        var inCrescent = territory is OccultSouthTerritory or OccultNorthTerritory;
+        var bocchiEnabled = false;
+        var bocchiControlsBmr = false;
+        string? bocchiState = null;
+        if (inCrescent)
+        {
+            BocchiBmrRuntime.TryGetBocchiStatus(
+                out bocchiEnabled,
+                out bocchiControlsBmr,
+                out bocchiState);
+        }
+
+        var shouldDisable = bocchiBmrCleanupPolicy.Update(
+            true,
+            inCrescent,
+            bmrEnabled,
+            bocchiEnabled,
+            bocchiControlsBmr,
+            bocchiState);
+        if (!shouldDisable || now < nextBmrCleanupAttemptAt)
+            return;
+
+        nextBmrCleanupAttemptAt = now + BmrCleanupRetryIntervalMs;
+        Plugin.CommandManager.ProcessCommand("/bmrai off");
+        Plugin.Log.Information("Disabled BMR AI left enabled by BOCCHI after leaving Occult Crescent.");
     }
 
     private void UpdateImeCleanup()
@@ -387,8 +441,15 @@ internal sealed unsafe class BasicFeatures : IDisposable
 
     public void DrawBmraiSettings()
     {
-        if (!ImGui.CollapsingHeader("BossMod Reborn 距离"))
+        if (!ImGui.CollapsingHeader("BossMod Reborn"))
             return;
+
+        Plugin.DrawFeatureToggle(
+            "离岛时清理 BOCCHI 遗留 AI",
+            Plugin.Config.Bmrai.CleanupBocchiAiOnCrescentExit,
+            value => Plugin.Config.Bmrai.CleanupBocchiAiOnCrescentExit = value);
+        Plugin.DrawHelp(
+            "仅在观察到 BOCCHI 于新月岛内开启 BMR AI 后，离开南征或北征区域时将其关闭；进入活动前已开启的 BMR AI 不受影响。");
 
         Plugin.DrawFeatureToggle(
             "自动设置 bmrai 距离",
@@ -423,6 +484,176 @@ internal sealed unsafe class BasicFeatures : IDisposable
             lastJobId = 0;
         }
         Plugin.DrawHelp("使用 {0} 作为距离占位符。");
+    }
+
+    private static class BocchiBmrRuntime
+    {
+        public static bool TryGetBmrEnabled(out bool enabled)
+        {
+            enabled = false;
+            try
+            {
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    if (assembly.GetName().Name != "BossModReborn")
+                        continue;
+
+                    var managerType = assembly.GetType("BossMod.AI.AIManager");
+                    const BindingFlags staticFlags = BindingFlags.Public |
+                                                     BindingFlags.NonPublic |
+                                                     BindingFlags.Static;
+                    var manager = managerType?.GetField("Instance", staticFlags)?.GetValue(null);
+                    if (manager == null)
+                        return false;
+
+                    const BindingFlags instanceFlags = BindingFlags.Public |
+                                                       BindingFlags.NonPublic |
+                                                       BindingFlags.Instance;
+                    enabled = manager.GetType().GetField("Beh", instanceFlags)?.GetValue(manager) != null;
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        public static bool TryGetBocchiStatus(
+            out bool enabled,
+            out bool controlsBmr,
+            out string? state)
+        {
+            enabled = false;
+            controlsBmr = false;
+            state = null;
+
+            try
+            {
+                var bocchi = ResolvePlugin();
+                var pluginConfig = bocchi == null ? null : GetMember(bocchi, "Config");
+                var automatorConfig = pluginConfig == null
+                    ? null
+                    : GetMember(pluginConfig, "AutomatorConfig");
+                if (bocchi == null || automatorConfig == null)
+                    return false;
+
+                enabled = GetMember(automatorConfig, "Enabled") is true;
+                var shouldToggle = GetMember(automatorConfig, "ShouldToggleAiProvider") is true ||
+                                   GetMember(automatorConfig, "ToggleAiProvider") is true;
+                var provider = GetMember(automatorConfig, "AiProvider");
+                controlsBmr = shouldToggle && provider != null &&
+                              (provider.ToString() == "BMR" || Convert.ToInt32(provider) == 1);
+
+                var automator = ResolveService(bocchi, "BOCCHI.Automator.Services.IAutomator");
+                state = automator == null ? null : GetMember(automator, "CurrentState")?.ToString();
+                if (!string.IsNullOrEmpty(state))
+                    return true;
+
+                var module = ResolveModule(bocchi, "BOCCHI.Modules.Automator.AutomatorModule");
+                var activityOwner = module == null
+                    ? null
+                    : GetMember(module, "automator") ?? GetMember(module, "Automator");
+                var activity = activityOwner == null ? null : GetMember(activityOwner, "Activity");
+                state = activity == null ? null : GetMember(activity, "state")?.ToString();
+                return true;
+            }
+            catch
+            {
+                enabled = false;
+                controlsBmr = false;
+                state = null;
+                return false;
+            }
+        }
+
+        private static object? ResolveService(object bocchi, string serviceTypeName)
+        {
+            var serviceProvider = GetMember(bocchi, "services") as IServiceProvider;
+            if (serviceProvider == null)
+                return null;
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var serviceType = assembly.GetType(serviceTypeName);
+                if (serviceType != null)
+                    return serviceProvider.GetService(serviceType);
+            }
+
+            return null;
+        }
+
+        private static object? ResolveModule(object bocchi, string moduleTypeName)
+        {
+            var moduleType = bocchi.GetType().Assembly.GetType(moduleTypeName);
+            var modules = GetMember(bocchi, "Modules");
+            if (moduleType == null || modules == null)
+                return null;
+
+            const BindingFlags flags = BindingFlags.Public |
+                                       BindingFlags.NonPublic |
+                                       BindingFlags.Instance;
+            var getModule = modules.GetType().GetMethods(flags).FirstOrDefault(method =>
+                method.Name == "GetModule" &&
+                method.IsGenericMethodDefinition &&
+                method.GetGenericArguments().Length == 1 &&
+                method.GetParameters().Length == 0);
+            return getModule?.MakeGenericMethod(moduleType).Invoke(modules, null);
+        }
+
+        private static object? ResolvePlugin()
+        {
+            var dalamud = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(assembly => assembly.GetName().Name == "Dalamud");
+            var serviceType = dalamud?.GetType("Dalamud.Service`1");
+            var pluginManagerType = dalamud?.GetType("Dalamud.Plugin.Internal.PluginManager");
+            if (serviceType == null || pluginManagerType == null)
+                return null;
+
+            var pluginManager = serviceType.MakeGenericType(pluginManagerType)
+                .GetMethod("Get")?
+                .Invoke(null, null);
+            if (pluginManager?.GetType().GetProperty("InstalledPlugins")?.GetValue(pluginManager)
+                is not System.Collections.IEnumerable installed)
+            {
+                return null;
+            }
+
+            foreach (var loadedPlugin in installed)
+            {
+                if (loadedPlugin == null)
+                    continue;
+
+                var pluginType = loadedPlugin.GetType().Name == "LocalDevPlugin"
+                    ? loadedPlugin.GetType().BaseType
+                    : loadedPlugin.GetType();
+                if (pluginType?.GetProperty("InternalName")?.GetValue(loadedPlugin) as string != "BOCCHI")
+                    continue;
+
+                return GetMember(loadedPlugin, "instance") ?? GetMember(loadedPlugin, "Instance");
+            }
+
+            return null;
+        }
+
+        private static object? GetMember(object instance, string name)
+        {
+            var type = instance.GetType();
+            const BindingFlags flags = BindingFlags.Public |
+                                       BindingFlags.NonPublic |
+                                       BindingFlags.Instance;
+            while (type != null)
+            {
+                if (type.GetProperty(name, flags) is { } property)
+                    return property.GetValue(instance);
+                if (type.GetField(name, flags) is { } field)
+                    return field.GetValue(instance);
+                type = type.BaseType;
+            }
+
+            return null;
+        }
     }
 
     public void DrawImeSettings()

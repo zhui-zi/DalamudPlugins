@@ -10,12 +10,13 @@ namespace KeitaToolbox;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 4;
+    public int Version { get; set; } = 6;
     public bool ProtectedFeaturesUnlocked { get; set; }
     public string AnonymousInstallId { get; set; } = string.Empty;
     public long LastUsageUnixSeconds { get; set; }
 
     public FeatureSwitches Features { get; set; } = new();
+    public InterfaceSettings Interface { get; set; } = new();
     public BmraiSettings Bmrai { get; set; } = new();
     public DutySettings Duty { get; set; } = new();
     public AutoInviteSettings AutoInvite { get; set; } = new();
@@ -78,14 +79,26 @@ public sealed class Configuration : IPluginConfiguration
             changed = true;
         }
 
-        if (Version < 4)
+        if (Interface == null)
         {
-            Version = 4;
+            Interface = new InterfaceSettings();
+            changed = true;
+        }
+
+        if (Version < 6)
+        {
+            Version = 6;
             changed = true;
         }
 
         return changed;
     }
+}
+
+[Serializable]
+public sealed class InterfaceSettings
+{
+    public bool ShowFloatingButton { get; set; } = true;
 }
 
 [Serializable]
@@ -101,7 +114,6 @@ public sealed class FeatureSwitches
     public bool PartyFinderDutyFilter { get; set; }
     public bool PvpPluginSwitcher { get; set; }
     public bool PortraitGearSync { get; set; }
-    public bool AdvancedTools { get; set; }
     public bool InstantReturn { get; set; }
     public bool IgnoreCharmAndFear { get; set; }
     public bool StatusBlock { get; set; }
@@ -116,6 +128,7 @@ public sealed class BmraiSettings
     public float MeleeDistance { get; set; } = 3f;
     public float RangedDistance { get; set; } = 15f;
     public string CommandFormat { get; set; } = "/bmrai maxdistancetarget {0}";
+    public bool CleanupBocchiAiOnCrescentExit { get; set; }
 }
 
 [Serializable]

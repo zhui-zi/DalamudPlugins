@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.CN.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>1.6.4</Version>
+    <Version>1.7.0</Version>
     <AssemblyName>KeitaToolbox</AssemblyName>
     <RootNamespace>KeitaToolbox</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="icon.png" LogicalName="KeitaToolbox.icon.png" />
     <Reference Include="OmenTools">
       <HintPath>lib\OmenTools.dll</HintPath>
       <Private>false</Private>

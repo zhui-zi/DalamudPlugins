@@ -195,21 +195,20 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
 
     public void RefreshProtectionState() => UpdateHookStates();
 
-    public void DrawSettings()
+    public void DrawMovementAndSystemSettings()
     {
-        if (!ImGui.CollapsingHeader("高级移动工具"))
-            return;
+        DrawMovementControlSettings();
+        DrawActionAndDisplacementSettings();
+        DrawPositionAndExplorationSettings();
+        DrawSystemStateSettings();
+        DrawTeleportSettings();
+        DrawDiagnosticsSettings();
+    }
 
-        Plugin.DrawFeatureToggle(
-            "高级移动工具",
-            Plugin.Config.Features.AdvancedTools,
-            value =>
-            {
-                Plugin.Config.Features.AdvancedTools = value;
-                UpdateHookStates();
-            });
-        Plugin.DrawHelp(
-            "这些功能会改变客户端的移动与动作行为。");
+    private void DrawMovementControlSettings()
+    {
+        if (!ImGui.CollapsingHeader("移动控制", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
 
         DrawToggle(
             "移动速度",
@@ -234,6 +233,19 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
             Plugin.Config.Advanced.SkillPostActionMove,
             value => Plugin.Config.Advanced.SkillPostActionMove = value);
         DrawToggle(
+            "防坠落",
+            Plugin.Config.Advanced.NoFall,
+            value => Plugin.Config.Advanced.NoFall = value);
+        DrawJumpRestrictionSettings();
+        DrawImmediateSprintSettings();
+    }
+
+    private void DrawActionAndDisplacementSettings()
+    {
+        if (!ImGui.CollapsingHeader("技能距离与强制位移"))
+            return;
+
+        DrawToggle(
             "延长技能距离",
             Plugin.Config.Advanced.ActionRange,
             value => Plugin.Config.Advanced.ActionRange = value);
@@ -251,29 +263,20 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
             "扩展突进技能距离",
             Plugin.Config.Advanced.GapCloserRange,
             value => Plugin.Config.Advanced.GapCloserRange = value);
-        if (DrawToggle(
-                "原地复活",
-                Plugin.Config.Advanced.SelfResurrect,
-                value => Plugin.Config.Advanced.SelfResurrect = value))
-        {
-            UpdateHookStates();
-        }
-        Plugin.DrawHelp("野外不可用；副本内死亡后需手动点击“返回”。");
         DrawToggle(
-            "防坠落",
-            Plugin.Config.Advanced.NoFall,
-            value => Plugin.Config.Advanced.NoFall = value);
-        if (DrawToggle(
-                "自动防击退",
-                Plugin.Config.Advanced.AntiKnockback,
-                value => Plugin.Config.Advanced.AntiKnockback = value))
-        {
-            UpdateHookStates();
-        }
+            "自动防击退",
+            Plugin.Config.Advanced.AntiKnockback,
+            value => Plugin.Config.Advanced.AntiKnockback = value);
         if (Plugin.Config.Advanced.AntiKnockback)
             DrawKnockbackSettings();
+    }
 
-        DrawSystemUtilitiesSettings();
+    private void DrawPositionAndExplorationSettings()
+    {
+        if (!ImGui.CollapsingHeader("位置与探索"))
+            return;
+
+        DrawLocalFlightSettings();
 
         var zOffset = Plugin.Config.Advanced.ZOffset;
         if (ImGui.Checkbox("Z 轴偏移", ref zOffset))
@@ -285,35 +288,67 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
             UpdateHookStates();
         }
 
-        if (Plugin.Config.Advanced.ZOffset)
+        if (!Plugin.Config.Advanced.ZOffset)
+            return;
+
+        var deepDungeonMode = Plugin.Config.Advanced.DeepDungeonZOffsetMode;
+        if (ImGui.Checkbox("死宫特供模式", ref deepDungeonMode))
         {
-            var deepDungeonMode = Plugin.Config.Advanced.DeepDungeonZOffsetMode;
-            if (ImGui.Checkbox("死宫特供模式", ref deepDungeonMode))
-            {
-                Plugin.Config.Advanced.DeepDungeonZOffsetMode = deepDungeonMode;
-                Plugin.Config.Save();
-                UpdateHookStates();
-            }
-            Plugin.DrawHelp(
-                "通过移动数据应用偏移；进入深层迷宫后，整十层以及特定第 99 层自动恢复正常高度。");
-
-            var previous = Plugin.Config.Advanced.ZOffsetValue;
-            var value = previous;
-            if (ImGui.DragFloat("Z 轴偏移量", ref value, 0.1f, -10f, 10f, "%.1f"))
-            {
-                value = Math.Clamp(value, -10f, 10f);
-                Plugin.Config.Advanced.ZOffsetValue = value;
-                if (!Plugin.Config.Advanced.DeepDungeonZOffsetMode)
-                    ApplyVerticalOffset(value - previous);
-                Plugin.Config.Save();
-            }
-
-            if (Plugin.Config.Advanced.DeepDungeonZOffsetMode &&
-                (normalMovementHook == null || combatMovementHook == null))
-            {
-                ImGui.TextDisabled("当前游戏版本无法使用死宫特供模式。");
-            }
+            Plugin.Config.Advanced.DeepDungeonZOffsetMode = deepDungeonMode;
+            Plugin.Config.Save();
+            UpdateHookStates();
         }
+        Plugin.DrawHelp(
+            "通过移动数据应用偏移；进入深层迷宫后，整十层以及特定第 99 层自动恢复正常高度。");
+
+        var previous = Plugin.Config.Advanced.ZOffsetValue;
+        var value = previous;
+        if (ImGui.DragFloat("Z 轴偏移量", ref value, 0.1f, -10f, 10f, "%.1f"))
+        {
+            value = Math.Clamp(value, -10f, 10f);
+            Plugin.Config.Advanced.ZOffsetValue = value;
+            if (!Plugin.Config.Advanced.DeepDungeonZOffsetMode)
+                ApplyVerticalOffset(value - previous);
+            Plugin.Config.Save();
+        }
+
+        if (Plugin.Config.Advanced.DeepDungeonZOffsetMode &&
+            (normalMovementHook == null || combatMovementHook == null))
+        {
+            ImGui.TextDisabled("当前游戏版本无法使用死宫特供模式。");
+        }
+    }
+
+    private void DrawSystemStateSettings()
+    {
+        if (!ImGui.CollapsingHeader("系统状态"))
+            return;
+
+        DrawHeartbeatSettings();
+    }
+
+    private void DrawTeleportSettings()
+    {
+        if (!ImGui.CollapsingHeader("位置传送"))
+            return;
+
+        if (ImGui.Button("传送到鼠标位置", new Vector2(-1f, 0f)))
+            ArmMouseTeleport();
+        if (mouseTeleportArmed)
+            ImGui.TextColored(new Vector4(0.35f, 0.85f, 1f, 1f), "选点中：左键传送，右键取消。");
+        else
+            Plugin.DrawHelp("点击后左键选点；也可用 /ktb mouse 传送到当前鼠标位置。");
+
+        if (ImGui.Button("传送到地图旗标", new Vector2(-1f, 0f)))
+            TeleportToFlag();
+
+        DrawDiveServiceStatus("位置传送");
+    }
+
+    private void DrawDiagnosticsSettings()
+    {
+        if (!ImGui.CollapsingHeader("诊断"))
+            return;
 
         var debug = Plugin.Config.Advanced.DebugLogging;
         if (ImGui.Checkbox("调试日志", ref debug))
@@ -321,31 +356,36 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
             Plugin.Config.Advanced.DebugLogging = debug;
             Plugin.Config.Save();
         }
-
-        ImGui.Separator();
-        if (ImGui.Button("传送到鼠标位置", new Vector2(-1f, 0f)))
-            ArmMouseTeleport();
-        if (mouseTeleportArmed)
-            ImGui.TextColored(new Vector4(0.35f, 0.85f, 1f, 1f), "选点中：左键传送，右键取消。");
-        else
-            ImGui.TextDisabled("按钮：点击后左键选点。指令：/ktb mouse 立即传送到当前鼠标位置。");
-
-        if (ImGui.Button("传送到地图旗标"))
-            TeleportToFlag();
-        ImGui.SameLine();
-        if (ImGui.Button("触发无敌"))
-            TriggerInvincibility();
-        ImGui.TextDisabled("指令：/ktb invincible");
-
-        if (diveTeleportHook == null)
-            ImGui.TextDisabled("当前游戏版本无法使用潜水传送。");
-        else if (diveTeleportContext == nint.Zero)
-            ImGui.TextDisabled("潜水传送正在等待游戏环境初始化。");
+        Plugin.DrawHelp("仅在排查功能初始化或执行问题时启用。");
     }
 
     public void DrawCombatUtilitySettings()
     {
-        if (!ImGui.CollapsingHeader("战斗辅助"))
+        DrawSurvivalSettings();
+        DrawStatusResistanceSettings();
+        DrawPvpInteractionSettings();
+    }
+
+    private void DrawSurvivalSettings()
+    {
+        if (!ImGui.CollapsingHeader("生存与紧急操作", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        DrawToggle(
+            "原地复活",
+            Plugin.Config.Advanced.SelfResurrect,
+            value => Plugin.Config.Advanced.SelfResurrect = value);
+        Plugin.DrawHelp("野外不可用；副本内死亡后需手动点击“返回”。");
+
+        if (ImGui.Button("触发无敌", new Vector2(-1f, 0f)))
+            TriggerInvincibility();
+        Plugin.DrawHelp("也可使用 /ktb invincible。");
+        DrawDiveServiceStatus("触发无敌");
+    }
+
+    private void DrawStatusResistanceSettings()
+    {
+        if (!ImGui.CollapsingHeader("异常状态与强制移动"))
             return;
 
         var ignoreCharm = Plugin.Config.Features.IgnoreCharmAndFear;
@@ -367,6 +407,12 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
             UpdateHookStates();
         }
         Plugin.DrawHelp("从本地和网络状态更新中过滤指定的移动状态。");
+    }
+
+    private void DrawPvpInteractionSettings()
+    {
+        if (!ImGui.CollapsingHeader("PvP 交互"))
+            return;
 
         var remoteInteraction = Plugin.Config.Features.FrontlineRemoteInteraction;
         if (Plugin.DrawFeatureToggle(
@@ -386,9 +432,16 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
         }
     }
 
+    private void DrawDiveServiceStatus(string featureName)
+    {
+        if (diveTeleportHook == null)
+            ImGui.TextDisabled($"{featureName}当前不可用：游戏版本不受支持。");
+        else if (diveTeleportContext == nint.Zero)
+            ImGui.TextDisabled($"{featureName}正在等待游戏环境初始化。");
+    }
+
     private static bool Enabled(Func<AdvancedToolsSettings, bool> selector) =>
         Plugin.ProtectedFeaturesUnlocked &&
-        Plugin.Config.Features.AdvancedTools &&
         selector(Plugin.Config.Advanced);
 
     private float SpeedDetour(nint arg1)
@@ -431,17 +484,13 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
                 frontlineFullRangeActions.Contains(actionId),
                 Plugin.Config.CombatUtilities.FrontlineRangeBonus);
 
-        if (Plugin.ProtectedFeaturesUnlocked &&
-            Plugin.Config.Features.AdvancedTools &&
-            Plugin.Config.Advanced.GapCloserRange &&
+        if (Enabled(settings => settings.GapCloserRange) &&
             gapCloserActions.Contains(actionId))
         {
             return original + 25f;
         }
 
-        return Plugin.ProtectedFeaturesUnlocked &&
-               Plugin.Config.Features.AdvancedTools &&
-               Plugin.Config.Advanced.ActionRange
+        return Enabled(settings => settings.ActionRange)
             ? original + Plugin.Config.Advanced.ActionRangeValue
             : original;
     }
@@ -635,12 +684,6 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
             return;
         }
 
-        if (!Plugin.Config.Features.AdvancedTools)
-        {
-            Plugin.Chat.PrintError("[Keita 工具箱] 请先启用高级移动工具。");
-            return;
-        }
-
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
         if (localPlayer == null)
         {
@@ -658,12 +701,6 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
         if (!Plugin.ProtectedFeaturesUnlocked)
         {
             Plugin.Chat.PrintError("[Keita 工具箱] 请先解锁受保护的高级工具。");
-            return;
-        }
-
-        if (!Plugin.Config.Features.AdvancedTools)
-        {
-            Plugin.Chat.PrintError("[Keita 工具箱] 请先启用高级移动工具。");
             return;
         }
 
@@ -694,9 +731,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
         if (!mouseTeleportArmed)
             return;
 
-        if (!Plugin.ProtectedFeaturesUnlocked ||
-            !Plugin.Config.Features.AdvancedTools ||
-            Plugin.ObjectTable.LocalPlayer == null)
+        if (!Plugin.ProtectedFeaturesUnlocked || Plugin.ObjectTable.LocalPlayer == null)
         {
             CancelMouseTeleport();
             return;
@@ -749,8 +784,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
 
     private void TeleportToFlag()
     {
-        if (!Plugin.ProtectedFeaturesUnlocked ||
-            !Plugin.Config.Features.AdvancedTools)
+        if (!Plugin.ProtectedFeaturesUnlocked)
             return;
 
         var agentMap = AgentMap.Instance();
@@ -769,12 +803,6 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
         if (!Plugin.ProtectedFeaturesUnlocked)
         {
             Plugin.Chat.PrintError("[Keita 工具箱] 请先解锁受保护的高级工具。");
-            return;
-        }
-
-        if (!Plugin.Config.Features.AdvancedTools)
-        {
-            Plugin.Chat.PrintError("[Keita 工具箱] 请先启用高级移动工具。");
             return;
         }
 
@@ -858,9 +886,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
 
     private static void ApplyVerticalOffset(float delta)
     {
-        if (!Plugin.ProtectedFeaturesUnlocked ||
-            !Plugin.Config.Features.AdvancedTools ||
-            Math.Abs(delta) < 0.001f)
+        if (!Plugin.ProtectedFeaturesUnlocked || Math.Abs(delta) < 0.001f)
             return;
 
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
@@ -874,7 +900,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
             position.Z);
     }
 
-    private static bool DrawToggle(string label, bool value, Action<bool> setter)
+    private bool DrawToggle(string label, bool value, Action<bool> setter)
     {
         var changed = value;
         if (!ImGui.Checkbox(label, ref changed))
@@ -882,6 +908,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
 
         setter(changed);
         Plugin.Config.Save();
+        UpdateHookStates();
         return true;
     }
 
@@ -902,22 +929,26 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
     private void UpdateHookStates()
     {
         var protectionUnlocked = Plugin.ProtectedFeaturesUnlocked;
-        var advancedEnabled = protectionUnlocked && Plugin.Config.Features.AdvancedTools;
-        SetHookEnabled(speedHook, advancedEnabled);
-        SetHookEnabled(movePermissionHook, advancedEnabled);
-        SetHookEnabled(skillPostActionMoveHook, advancedEnabled);
+        var settings = Plugin.Config.Advanced;
+        SetHookEnabled(speedHook, protectionUnlocked && settings.SpeedHack);
+        SetHookEnabled(movePermissionHook, protectionUnlocked && settings.MovePermission);
+        SetHookEnabled(
+            skillPostActionMoveHook,
+            protectionUnlocked && settings.SkillPostActionMove);
         SetHookEnabled(
             actionRangeHook,
-            advancedEnabled ||
-            (protectionUnlocked && Plugin.Config.Features.FrontlineRemoteInteraction));
+            protectionUnlocked &&
+            (settings.ActionRange ||
+             settings.GapCloserRange ||
+             Plugin.Config.Features.FrontlineRemoteInteraction));
         SetHookEnabled(
             selfResurrectHook,
-            protectionUnlocked && Plugin.Config.Advanced.SelfResurrect);
-        SetHookEnabled(noFallHook, advancedEnabled);
+            protectionUnlocked && settings.SelfResurrect);
+        SetHookEnabled(noFallHook, protectionUnlocked && settings.NoFall);
         SetHookEnabled(
             antiKnockbackHook,
-            advancedEnabled && Plugin.Config.Advanced.AntiKnockback);
-        SetHookEnabled(diveTeleportHook, advancedEnabled);
+            protectionUnlocked && settings.AntiKnockback);
+        SetHookEnabled(diveTeleportHook, protectionUnlocked);
         SetHookEnabled(
             forcedActionHook,
             protectionUnlocked && Plugin.Config.Features.IgnoreCharmAndFear);
@@ -928,13 +959,13 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
             statusPacketHook,
             protectionUnlocked && Plugin.Config.Features.StatusBlock);
         var deepDungeonZOffsetEnabled =
-            advancedEnabled &&
-            Plugin.Config.Advanced.ZOffset &&
-            Plugin.Config.Advanced.DeepDungeonZOffsetMode;
+            protectionUnlocked &&
+            settings.ZOffset &&
+            settings.DeepDungeonZOffsetMode;
         SetHookEnabled(normalMovementHook, deepDungeonZOffsetEnabled);
         SetHookEnabled(combatMovementHook, deepDungeonZOffsetEnabled);
-        UpdateSystemUtilityStates(advancedEnabled);
-        if (!advancedEnabled)
+        UpdateSystemUtilityStates(protectionUnlocked);
+        if (!protectionUnlocked)
         {
             diveTeleportContext = nint.Zero;
             if (mouseTeleportArmed)

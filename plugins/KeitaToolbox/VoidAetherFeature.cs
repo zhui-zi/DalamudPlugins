@@ -69,14 +69,55 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
         Plugin.Log.Information("Void aether tools disposed.");
     }
 
-    public void DrawSettings()
+    public void DrawCharacterAndInterfaceSettings()
+    {
+        if (!ImGui.CollapsingHeader("装备与雇员服务", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        if (ImGui.Button("虚空修理工"))
+            OpenRepair();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("打开虚空修理工（需周围存在NPC）");
+
+        ImGui.SameLine();
+        if (ImGui.Button("虚空传唤铃"))
+            OpenSummoningBell();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("打开虚空传唤铃");
+
+        Plugin.DrawHelp("通过游戏事件打开装备维护与雇员服务。");
+    }
+
+    public void DrawPartyAndTradeSettings()
+    {
+        if (!ImGui.CollapsingHeader("储物与商店服务", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        if (ImGui.Button("部队储物柜"))
+            OpenCompanyChest();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("打开部队储物柜");
+
+        ImGui.SameLine();
+        if (ImGui.Button("双色宝石4级商店（图莱尤拉）"))
+            OpenBicolorShop();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("无视等级限制打开当前地图的4级双色宝石商店");
+
+        Plugin.DrawHelp("通过游戏事件打开储物与商店服务。");
+    }
+
+    public void DrawMovementAndSystemSettings()
     {
         EnsureTerritoryData();
         RefreshUnlockStates();
 
-        DrawQuickActions();
         DrawAetheryteUnlocks();
         DrawAetherCurrentUnlocks();
+    }
+
+    public void DrawCombatAndStatusSettings()
+    {
         DrawBattlefieldPoints();
     }
 
@@ -100,36 +141,6 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
 
         TouchBattlefieldPoint(parts[1]);
         return true;
-    }
-
-    private static void DrawQuickActions()
-    {
-        if (!ImGui.CollapsingHeader("虚空快捷功能", ImGuiTreeNodeFlags.DefaultOpen))
-            return;
-
-        if (ImGui.Button("虚空修理工"))
-            OpenRepair();
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("打开虚空修理工（需周围存在NPC）");
-
-        ImGui.SameLine();
-        if (ImGui.Button("部队储物柜"))
-            OpenCompanyChest();
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("打开部队储物柜");
-
-        ImGui.SameLine();
-        if (ImGui.Button("虚空传唤铃"))
-            OpenSummoningBell();
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("打开虚空传唤铃");
-
-        if (ImGui.Button("双色宝石4级商店（图莱尤拉）"))
-            OpenBicolorShop();
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("无视等级限制打开当前地图的4级双色宝石商店");
-
-        Plugin.DrawHelp("通过游戏事件发起虚空交互。");
     }
 
     private void DrawAetheryteUnlocks()

@@ -46,6 +46,7 @@ public sealed partial class Plugin : IDalamudPlugin
     [PluginService] internal static IDtrBar DtrBar { get; private set; } = null!;
     [PluginService] internal static IToastGui Toasts { get; private set; } = null!;
     [PluginService] internal static INotificationManager Notifications { get; private set; } = null!;
+    [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
     internal static Configuration Config { get; private set; } = null!;
@@ -131,6 +132,7 @@ public sealed partial class Plugin : IDalamudPlugin
             () => new VerificationMonitorFeature());
 
         Framework.Update += OnFrameworkUpdate;
+        PluginInterface.UiBuilder.Draw += DrawFloatingButton;
         PluginInterface.UiBuilder.Draw += DrawWindow;
         PluginInterface.UiBuilder.OpenConfigUi += OpenWindow;
         PluginInterface.UiBuilder.OpenMainUi += OpenWindow;
@@ -153,6 +155,7 @@ public sealed partial class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(Command);
         PluginInterface.UiBuilder.OpenMainUi -= OpenWindow;
         PluginInterface.UiBuilder.OpenConfigUi -= OpenWindow;
+        PluginInterface.UiBuilder.Draw -= DrawFloatingButton;
         PluginInterface.UiBuilder.Draw -= DrawWindow;
         Framework.Update -= OnFrameworkUpdate;
 
@@ -240,7 +243,7 @@ public sealed partial class Plugin : IDalamudPlugin
 
         if (trimmed.Equals("void", StringComparison.OrdinalIgnoreCase))
         {
-            selectedSettingsPage = SettingsPage.VoidAether;
+            selectedSettingsPage = SettingsPage.MovementAndSystem;
             windowOpen = true;
             return;
         }

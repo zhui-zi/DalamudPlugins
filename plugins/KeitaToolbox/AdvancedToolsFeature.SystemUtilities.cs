@@ -135,33 +135,30 @@ internal sealed unsafe partial class AdvancedToolsFeature
             ImGui.TextDisabled("当前游戏版本无法调整强制位移完成时间。");
     }
 
-    private void DrawSystemUtilitiesSettings()
+    private void DrawJumpRestrictionSettings()
     {
-        ImGui.Separator();
-        ImGui.TextUnformatted("系统增强");
-
-        if (DrawToggle(
-                "自动免疫禁止跳跃限制",
-                Plugin.Config.Advanced.JumpRestrictionImmunity,
-                value => Plugin.Config.Advanced.JumpRestrictionImmunity = value))
-        {
-            UpdateHookStates();
-        }
+        DrawToggle(
+            "自动免疫禁止跳跃限制",
+            Plugin.Config.Advanced.JumpRestrictionImmunity,
+            value => Plugin.Config.Advanced.JumpRestrictionImmunity = value);
         Plugin.DrawHelp("阻止状态或场地设置本地禁止跳跃标记。");
         if (jumpRestrictionHook == null)
             ImGui.TextDisabled("当前游戏版本无法使用跳跃限制免疫。");
+    }
 
-        if (DrawToggle(
-                "本地飞行模式",
-                Plugin.Config.Advanced.LocalFlight,
-                value => Plugin.Config.Advanced.LocalFlight = value))
-        {
-            UpdateHookStates();
-        }
+    private void DrawLocalFlightSettings()
+    {
+        DrawToggle(
+            "本地飞行模式",
+            Plugin.Config.Advanced.LocalFlight,
+            value => Plugin.Config.Advanced.LocalFlight = value);
         Plugin.DrawHelp("移除当前区域的本地飞行判定限制。");
         if (localFlightHook == null)
             ImGui.TextDisabled("当前游戏版本无法使用本地飞行模式。");
+    }
 
+    private void DrawImmediateSprintSettings()
+    {
         DrawToggle(
             "即刻冲刺",
             Plugin.Config.Advanced.ImmediateSprint,
@@ -169,14 +166,14 @@ internal sealed unsafe partial class AdvancedToolsFeature
         Plugin.DrawHelp("直接发送冲刺动作并跳过普通冷却限制。");
         if (!immediateSprintRegistered)
             ImGui.TextDisabled("即刻冲刺服务当前不可用。");
+    }
 
-        if (DrawToggle(
-                "保持心电图",
-                Plugin.Config.Advanced.KeepHeartbeat,
-                value => Plugin.Config.Advanced.KeepHeartbeat = value))
-        {
-            UpdateHookStates();
-        }
+    private void DrawHeartbeatSettings()
+    {
+        DrawToggle(
+            "保持心电图",
+            Plugin.Config.Advanced.KeepHeartbeat,
+            value => Plugin.Config.Advanced.KeepHeartbeat = value);
         Plugin.DrawHelp("持续保持指定的在线状态显示，不影响其他操作。");
         if (Plugin.Config.Advanced.KeepHeartbeat)
         {
@@ -193,13 +190,14 @@ internal sealed unsafe partial class AdvancedToolsFeature
             ImGui.TextDisabled("当前游戏版本无法使用保持心电图。");
     }
 
-    private void UpdateSystemUtilityStates(bool advancedEnabled)
+    private void UpdateSystemUtilityStates(bool protectionUnlocked)
     {
-        var antiKnockbackEnabled = advancedEnabled && Plugin.Config.Advanced.AntiKnockback;
+        var antiKnockbackEnabled =
+            protectionUnlocked && Plugin.Config.Advanced.AntiKnockback;
         SetHookEnabled(knockbackSpeedHook, antiKnockbackEnabled);
 
         var enableJumpRestriction =
-            advancedEnabled && Plugin.Config.Advanced.JumpRestrictionImmunity;
+            protectionUnlocked && Plugin.Config.Advanced.JumpRestrictionImmunity;
         var jumpRestrictionWasEnabled = jumpRestrictionHook?.IsEnabled == true;
         SetHookEnabled(jumpRestrictionHook, enableJumpRestriction);
         if (enableJumpRestriction &&
@@ -211,9 +209,9 @@ internal sealed unsafe partial class AdvancedToolsFeature
 
         SetHookEnabled(
             localFlightHook,
-            advancedEnabled && Plugin.Config.Advanced.LocalFlight);
+            protectionUnlocked && Plugin.Config.Advanced.LocalFlight);
         SetHeartbeatEnabled(
-            advancedEnabled && Plugin.Config.Advanced.KeepHeartbeat);
+            protectionUnlocked && Plugin.Config.Advanced.KeepHeartbeat);
     }
 
     private byte KnockbackSpeedDetour(nint arg1, nint arg2, nint arg3, float lockTime)
