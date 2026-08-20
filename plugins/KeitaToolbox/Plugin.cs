@@ -62,6 +62,7 @@ public sealed partial class Plugin : IDalamudPlugin
     private readonly AdvancedToolsFeature? advancedToolsFeature;
     private readonly MapGearsetFeature? mapGearsetFeature;
     private readonly OccultPotFeature? occultPotFeature;
+    private readonly VoidAetherFeature? voidAetherFeature;
     private readonly AeAssistStartupFeature? aeAssistStartupFeature;
     private readonly VerificationMonitorFeature? verificationMonitorFeature;
     private readonly bool omenServicesInitialized;
@@ -118,6 +119,9 @@ public sealed partial class Plugin : IDalamudPlugin
             occultPotFeature = CreateFeature(
                 "Magic Pot Assistant",
                 () => new OccultPotFeature());
+            voidAetherFeature = CreateFeature(
+                "void aether tools",
+                () => new VoidAetherFeature());
         }
         aeAssistStartupFeature = CreateFeature(
             "AEAssist startup automation",
@@ -155,6 +159,7 @@ public sealed partial class Plugin : IDalamudPlugin
 
         verificationMonitorFeature?.Dispose();
         aeAssistStartupFeature?.Dispose();
+        voidAetherFeature?.Dispose();
         occultPotFeature?.Dispose();
         mapGearsetFeature?.Dispose();
         advancedToolsFeature?.Dispose();
@@ -233,6 +238,16 @@ public sealed partial class Plugin : IDalamudPlugin
                 advancedToolsFeature.TriggerInvincibility();
             return;
         }
+
+        if (trimmed.Equals("void", StringComparison.OrdinalIgnoreCase))
+        {
+            selectedSettingsPage = SettingsPage.VoidAether;
+            windowOpen = true;
+            return;
+        }
+
+        if (voidAetherFeature?.HandleCommand(trimmed) == true)
+            return;
 
         if (occultPotFeature?.HandleCommand(trimmed) == true)
             return;

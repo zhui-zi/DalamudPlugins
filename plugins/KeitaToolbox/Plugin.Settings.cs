@@ -12,6 +12,7 @@ public sealed partial class Plugin
         PartyAndTrade,
         CharacterAndInterface,
         OccultCrescent,
+        VoidAether,
         IntegrationsAndAdvanced,
     }
 
@@ -47,6 +48,7 @@ public sealed partial class Plugin
             DrawNavigationItem(SettingsPage.PartyAndTrade, "组队与交易");
             DrawNavigationItem(SettingsPage.CharacterAndInterface, "角色与界面");
             DrawNavigationItem(SettingsPage.OccultCrescent, "新月岛");
+            DrawNavigationItem(SettingsPage.VoidAether, "虚空功能");
             DrawNavigationItem(SettingsPage.IntegrationsAndAdvanced, "插件与高级");
         }
         ImGui.EndChild();
@@ -81,6 +83,9 @@ public sealed partial class Plugin
             SettingsPage.OccultCrescent => (
                 "新月岛",
                 "管理魔法罐提醒、地图标记、自动化与战斗辅助。"),
+            SettingsPage.VoidAether => (
+                "虚空功能",
+                "管理虚空交互、水晶与风脉解锁，以及战场摸点。"),
             _ => (
                 "插件与高级",
                 "管理外部插件联动、验证监控与高级工具。"),
@@ -122,6 +127,12 @@ public sealed partial class Plugin
                     DrawUnavailable("魔法罐助手");
                 else
                     occultPotFeature.DrawSettings();
+                break;
+            case SettingsPage.VoidAether:
+                if (voidAetherFeature == null)
+                    DrawUnavailable("虚空功能");
+                else
+                    voidAetherFeature.DrawSettings();
                 break;
             case SettingsPage.IntegrationsAndAdvanced:
                 if (aeAssistStartupFeature == null)
