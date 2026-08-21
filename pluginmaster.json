@@ -3,7 +3,7 @@
     "Author": "zhui-zi",
     "Name": "Keita 工具箱",
     "InternalName": "KeitaToolbox",
-    "AssemblyVersion": "1.7.0.0",
+    "AssemblyVersion": "1.7.0.1",
     "Description": "整合多种米线功能",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
@@ -26,7 +26,7 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1787223794,
+    "LastUpdate": 1787306412,
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip"

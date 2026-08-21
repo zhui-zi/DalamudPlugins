@@ -589,7 +589,7 @@ internal sealed partial class OccultPotFeature
         {
             if (territory == OccultNorthTerritory)
             {
-                if (DangerZoneHandling != DangerZoneHandlingMode.Underground)
+                if (DangerZoneHandling is DangerZoneHandlingMode.Manual or DangerZoneHandlingMode.Skip)
                 {
                     HandleNorthContinuationDanger();
                     return;
@@ -947,7 +947,7 @@ internal sealed partial class OccultPotFeature
                     EnqueueFinish();
                 else if ((autoDigTarget?.TerritoryID ?? GameState.TerritoryType) == OccultNorthTerritory)
                 {
-                    if (DangerZoneHandling == DangerZoneHandlingMode.Underground)
+                    if (DangerZoneHandling is DangerZoneHandlingMode.Ground or DangerZoneHandlingMode.Underground)
                     {
                         digRelocateCount = 0;
                         EnqueueDigCycle(true);
