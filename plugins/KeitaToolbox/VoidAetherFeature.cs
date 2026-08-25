@@ -49,13 +49,15 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
 
     private readonly List<AetheryteEntry> aetherytes = [];
     private readonly List<AetherCurrentEntry> aetherCurrents = [];
+    private readonly AdvancedToolsFeature? advancedToolsFeature;
     private uint cachedTerritory;
     private bool refreshUnlockState = true;
     private long lastUnlockRefreshAt;
     private bool battlefieldWindowOpen;
 
-    public VoidAetherFeature()
+    public VoidAetherFeature(AdvancedToolsFeature? advancedToolsFeature)
     {
+        this.advancedToolsFeature = advancedToolsFeature;
         Plugin.PluginInterface.UiBuilder.Draw += DrawBattlefieldWindow;
         RefreshTerritoryData(Plugin.ClientState.TerritoryType);
         Plugin.Log.Information("Void aether tools initialized.");
@@ -230,13 +232,31 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
 
     private void DrawBattlefieldPoints()
     {
-        if (!ImGui.CollapsingHeader("战场虚空摸点", ImGuiTreeNodeFlags.DefaultOpen))
+        if (!ImGui.CollapsingHeader("PVP", ImGuiTreeNodeFlags.DefaultOpen))
             return;
 
-        if (ImGui.Button("独立窗口##OpenBattlefieldWindow"))
-            battlefieldWindowOpen = true;
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("打开独立的战场摸点窗口 命令: /ktb bf");
+        DrawBattlefieldTools(true);
+    }
+
+    private void DrawBattlefieldTools(bool showWindowButton)
+    {
+        if (advancedToolsFeature == null)
+        {
+            ImGui.TextDisabled("远程摸点当前不可用，请检查 Dalamud 日志。");
+        }
+        else
+        {
+            advancedToolsFeature.DrawFrontlineRemoteInteractionSettings();
+        }
+
+        ImGui.Separator();
+        if (showWindowButton)
+        {
+            if (ImGui.Button("独立窗口##OpenBattlefieldWindow"))
+                battlefieldWindowOpen = true;
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("打开独立的 PVP 窗口 命令: /ktb bf");
+        }
 
         ImGui.Spacing();
         DrawBattlefieldPointGrid();
@@ -248,7 +268,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
             return;
 
         ImGui.SetNextWindowSize(new System.Numerics.Vector2(420f, 0f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("战场虚空摸点##BattlefieldTouchWindow", ref battlefieldWindowOpen))
+        if (!ImGui.Begin("PVP##BattlefieldTouchWindow", ref battlefieldWindowOpen))
         {
             ImGui.End();
             return;
@@ -263,7 +283,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
         };
         ImGui.TextUnformatted($"当前地图: {mapName} ({territory})");
         ImGui.Separator();
-        DrawBattlefieldPointGrid();
+        DrawBattlefieldTools(false);
         ImGui.End();
     }
 
@@ -305,7 +325,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
                     TouchAllBattlefieldPoints();
                 break;
             default:
-                ImGui.TextDisabled("战场虚空摸点仅在以下地图可用:");
+                ImGui.TextDisabled("PVP 摸点仅在以下地图可用:");
                 ImGui.TextDisabled("- 尘封秘岩 (431)");
                 ImGui.TextDisabled("- 大草原 (888)");
                 break;
@@ -549,7 +569,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
                 Plugin.Chat.Print("[Keita 工具箱] 已摸尘封秘岩全部15个点。");
                 break;
             default:
-                Plugin.Chat.PrintError("[Keita 工具箱] 战场虚空摸点仅支持尘封秘岩或大草原。");
+                Plugin.Chat.PrintError("[Keita 工具箱] PVP 摸点仅支持尘封秘岩或大草原。");
                 break;
         }
     }
@@ -579,7 +599,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
                 TouchShatterPoint(normalized);
                 break;
             default:
-                Plugin.Chat.PrintError("[Keita 工具箱] 战场虚空摸点仅支持尘封秘岩或大草原。");
+                Plugin.Chat.PrintError("[Keita 工具箱] PVP 摸点仅支持尘封秘岩或大草原。");
                 break;
         }
     }

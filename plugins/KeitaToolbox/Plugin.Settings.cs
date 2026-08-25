@@ -125,7 +125,7 @@ public sealed partial class Plugin
                 break;
             case SettingsPage.CombatAndStatus:
                 if (voidAetherFeature == null)
-                    DrawUnavailable("战场摸点");
+                    DrawBattlefieldFallbackSettings();
                 else
                     voidAetherFeature.DrawCombatAndStatusSettings();
                 if (!DrawProtectedFeatureGate())
@@ -220,6 +220,20 @@ public sealed partial class Plugin
             Config.Interface.ShowFloatingButton,
             value => Config.Interface.ShowFloatingButton = value);
         DrawHelp("使用插件图标显示；左键打开设置，右键拖动位置。关闭后仍可使用 /ktb 打开设置。");
+    }
+
+    private void DrawBattlefieldFallbackSettings()
+    {
+        if (!ImGui.CollapsingHeader("PVP", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        if (advancedToolsFeature == null)
+            DrawUnavailable("远程摸点");
+        else
+            advancedToolsFeature.DrawFrontlineRemoteInteractionSettings();
+
+        ImGui.Separator();
+        DrawUnavailable("战场点位");
     }
 
     private bool DrawProtectedFeatureGate()

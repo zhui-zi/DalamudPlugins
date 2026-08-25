@@ -363,7 +363,6 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
     {
         DrawSurvivalSettings();
         DrawStatusResistanceSettings();
-        DrawPvpInteractionSettings();
     }
 
     private void DrawSurvivalSettings()
@@ -409,14 +408,11 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
         Plugin.DrawHelp("从本地和网络状态更新中过滤指定的移动状态。");
     }
 
-    private void DrawPvpInteractionSettings()
+    public void DrawFrontlineRemoteInteractionSettings()
     {
-        if (!ImGui.CollapsingHeader("PvP 交互"))
-            return;
-
         var remoteInteraction = Plugin.Config.Features.FrontlineRemoteInteraction;
         if (Plugin.DrawFeatureToggle(
-                "战场远程摸点",
+                "远程摸点",
                 remoteInteraction,
                 value => Plugin.Config.Features.FrontlineRemoteInteraction = value))
         {

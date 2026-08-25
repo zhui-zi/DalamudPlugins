@@ -13,6 +13,14 @@ internal static class CrossDCRoutingPolicy
     internal static bool ShouldForceTravel(float? islandTimeLeftSeconds) =>
         islandTimeLeftSeconds is > 0 and < ForcedTravelThresholdSeconds;
 
+    internal static bool ShouldReenterIsland(
+        bool featureEnabled,
+        bool autoCrossDataCenterEnabled,
+        float? islandTimeLeftSeconds) =>
+        featureEnabled &&
+        !autoCrossDataCenterEnabled &&
+        ShouldForceTravel(islandTimeLeftSeconds);
+
     internal static CrossDCCandidate? SelectTarget(
         ushort currentDataCenter,
         IReadOnlyList<CrossDCCandidate> candidates,

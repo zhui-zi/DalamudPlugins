@@ -30,6 +30,16 @@ public sealed class PolicyTests
     }
 
     [TestMethod]
+    public void IslandReentryRequiresLowTimeAndDisabledCrossDataCenterTravel()
+    {
+        Assert.IsTrue(CrossDCRoutingPolicy.ShouldReenterIsland(true, false, 5_399));
+        Assert.IsFalse(CrossDCRoutingPolicy.ShouldReenterIsland(true, false, 5_400));
+        Assert.IsFalse(CrossDCRoutingPolicy.ShouldReenterIsland(true, true, 5_399));
+        Assert.IsFalse(CrossDCRoutingPolicy.ShouldReenterIsland(false, false, 5_399));
+        Assert.IsFalse(CrossDCRoutingPolicy.ShouldReenterIsland(true, false, null));
+    }
+
+    [TestMethod]
     public void CrossDCRoutingDoesNotForceAnExpiredCandidate()
     {
         CrossDCCandidate[] candidates =

@@ -982,6 +982,13 @@ internal sealed partial class OccultPotFeature
             autoDigTask.Enqueue(WaitCrossDCQuery(15000));
             autoDigTask.Enqueue(EnqueueCrossDCOrStay);
         }
+        else if (CrossDCRoutingPolicy.ShouldReenterIsland(
+                     config.ReenterIslandWhenTimeLow,
+                     config.EnableAutoCrossDC,
+                     GetIslandTimeLeftSeconds()))
+        {
+            autoDigTask.Enqueue(() => EnqueueIslandReentry(targetTerritory));
+        }
         else
         {
             autoDigTask.Enqueue(() => { EndBocchiReturnSuppression(); UseReturn(); return true; });
@@ -990,6 +997,59 @@ internal sealed partial class OccultPotFeature
             autoDigTask.Enqueue(() => BocchiOn());
             autoDigTask.Enqueue(() => { FinishAutoDig(); return true; });
         }
+    }
+
+    private bool EnqueueIslandReentry(uint territory)
+    {
+        if (autoDigTask == null) return true;
+
+        var entryCommand = territory == OccultNorthTerritory ? "/pdrfe ocn" : "/pdrfe ocs";
+        crossingDC    = true;
+        autoDigStatus = "换岛：退出新月岛";
+        NotifyHelper.Instance().NotificationInfo("岛内剩余不足 90 分钟，准备自动换岛");
+
+        autoDigTask.Enqueue(() => SendCommand("/pdr leaveduty"));
+        autoDigTask.Enqueue(WaitZone(territory, false, 20000));
+        autoDigTask.Enqueue(() =>
+        {
+            if (GameState.TerritoryType == territory)
+                return FailIslandReentry("退出新月岛失败，已停止自动换岛");
+
+            autoDigStatus = "换岛：等待 30 秒";
+            return true;
+        });
+        autoDigTask.Enqueue(PlayerReady);
+        autoDigTask.DelayNext(30000);
+        autoDigTask.Enqueue(() =>
+        {
+            autoDigStatus = "换岛：重新进入新月岛";
+            SendCommand(entryCommand);
+            return true;
+        });
+        autoDigTask.Enqueue(WaitZone(territory, true, 60000));
+        autoDigTask.Enqueue(() =>
+        {
+            if (GameState.TerritoryType != territory)
+                return FailIslandReentry("重新进入新月岛超时，已停止自动换岛");
+
+            crossingDC = false;
+            EndBocchiReturnSuppression();
+            BocchiOn();
+            NotifyHelper.Instance().NotificationInfo("自动换岛完成");
+            FinishAutoDig();
+            return true;
+        });
+
+        return true;
+    }
+
+    private bool FailIslandReentry(string message)
+    {
+        DService.Instance().Log.Warning($"[KeitaToolbox.MagicPot] {message}");
+        AbortAutoDig();
+        NotifyHelper.Instance().NotificationInfo(message);
+        BocchiOn();
+        return true;
     }
 
     private void HandleNorthContinuationDanger()

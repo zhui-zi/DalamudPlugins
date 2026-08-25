@@ -122,7 +122,7 @@ public sealed partial class Plugin : IDalamudPlugin
                 () => new OccultPotFeature());
             voidAetherFeature = CreateFeature(
                 "void aether tools",
-                () => new VoidAetherFeature());
+                () => new VoidAetherFeature(advancedToolsFeature));
         }
         aeAssistStartupFeature = CreateFeature(
             "AEAssist startup automation",

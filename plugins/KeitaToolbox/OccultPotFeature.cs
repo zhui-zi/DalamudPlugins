@@ -922,6 +922,15 @@ internal sealed partial class OccultPotFeature : IDisposable
                     ImGui.TextColored(KnownColor.Orange.ToVector4(),
                         "岛内剩余不足 90 分钟且有可用目标时强制选择其他大区；需启用 /pdrfe 和 /pdr worldtravel；跨区有崩游戏风险。");
 
+                using (ImRaii.Disabled(config.EnableAutoCrossDC))
+                {
+                    if (ImGui.Checkbox("挖完时岛内不足 90 分钟自动换岛", ref config.ReenterIslandWhenTimeLow))
+                        config.Save(this);
+                }
+                if (config.ReenterIslandWhenTimeLow && !config.EnableAutoCrossDC)
+                    ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                        "退出副本并等待 30 秒后重新进入当前南征或北征；需启用 /pdrfe。");
+
                 if (ImGui.Checkbox("FATE / CE 后按岛况自动寻宝", ref config.EnableCofferHunt))
                     config.Save(this);
                 if (config.EnableCofferHunt)
@@ -3729,6 +3738,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         public bool      AutoDigWaitForRescue;
         public bool      AutoDigEmergencyReturn;
         public bool      EnableAutoCrossDC;
+        public bool      ReenterIslandWhenTimeLow;
         public bool      AutoDeclineInvite;
 
 
