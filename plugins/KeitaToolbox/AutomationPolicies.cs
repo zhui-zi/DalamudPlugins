@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Text.RegularExpressions;
 
 namespace KeitaToolbox;
 
@@ -97,12 +98,133 @@ internal static class AutoInvitePolicy
         !hasPendingInvitation;
 }
 
+internal static class AutoAcceptRaisePolicy
+{
+    private static readonly Regex RaisePromptRegex = new(
+        @"要接受.*的救助吗？",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Singleline);
+
+    internal static bool MatchesPrompt(string promptText) => RaisePromptRegex.IsMatch(promptText);
+
+    internal static bool CanAccept(
+        bool featureEnabled,
+        bool inOccultCrescent,
+        bool localPlayerDead,
+        bool betweenAreas,
+        string promptText) =>
+        featureEnabled &&
+        inOccultCrescent &&
+        localPlayerDead &&
+        !betweenAreas &&
+        MatchesPrompt(promptText);
+}
+
+internal static class CurrencyExchangeConfirmationPolicy
+{
+    internal static bool MatchesPrompt(string promptText, string currencyName, string rewardName) =>
+        !string.IsNullOrWhiteSpace(promptText) &&
+        promptText.Contains(currencyName, StringComparison.OrdinalIgnoreCase) &&
+        promptText.Contains(rewardName, StringComparison.OrdinalIgnoreCase);
+}
+
+internal static class CurrencyExchangeLocationPolicy
+{
+    internal const float InitialAetheryteRadius = 10f;
+
+    internal static bool IsNearInitialAetheryte(Vector3 playerPosition, Vector3 aetherytePosition)
+    {
+        var deltaX = playerPosition.X - aetherytePosition.X;
+        var deltaZ = playerPosition.Z - aetherytePosition.Z;
+        return (deltaX * deltaX) + (deltaZ * deltaZ) <= InitialAetheryteRadius * InitialAetheryteRadius;
+    }
+}
+
+internal enum CofferHuntExecutor
+{
+    DailyRoutines,
+    Bocchi,
+}
+
+internal enum CofferHuntHandoffMode
+{
+    InterruptForMagicPot = 0,
+    FinishCurrentHunt    = 1,
+}
+
+internal static class CofferHuntHandoffPolicy
+{
+    internal const long LeadSeconds = 300;
+
+    internal static bool IsMagicPotDue(long now, long nextSpawnTime) =>
+        nextSpawnTime > 0 && nextSpawnTime - now < LeadSeconds;
+
+    internal static bool ShouldInterrupt(
+        CofferHuntHandoffMode mode,
+        long now,
+        long nextSpawnTime) =>
+        mode == CofferHuntHandoffMode.InterruptForMagicPot &&
+        IsMagicPotDue(now, nextSpawnTime);
+}
+
+internal enum CurrencyExchangeReward
+{
+    UltimateFixative,
+    OldCoffer,
+}
+
+internal readonly record struct CurrencyExchangeSpec(
+    string CurrencyName,
+    uint CurrencyItemID,
+    uint EventID,
+    int Cost,
+    string RewardName,
+    uint RewardItemID);
+
+internal static class CurrencyExchangeCatalog
+{
+    private const uint UltimateFixativeItemID = 51978;
+    private const uint OldCofferItemID = 47740;
+
+    private static readonly CurrencyExchangeSpec[] NorthFixativeExchanges =
+    [
+        new("十二城邦白银币", 51975, 0x1B0614, 1200, "终极固定剂", UltimateFixativeItemID),
+        new("十二城邦白金币", 51976, 0x1B0615, 1920, "终极固定剂", UltimateFixativeItemID),
+    ];
+
+    private static readonly CurrencyExchangeSpec[] NorthCofferExchanges =
+    [
+        new("十二城邦白银币", 51975, 0x1B0614, 40, "辅助道具：古旧的钱箱", OldCofferItemID),
+        new("十二城邦白金币", 51976, 0x1B0615, 50, "辅助道具：古旧的钱箱", OldCofferItemID),
+    ];
+
+    private static readonly CurrencyExchangeSpec[] SouthCofferExchanges =
+    [
+        new("十二城邦银币", 45043, 0x1B05B0, 40, "辅助道具：古旧的钱箱", OldCofferItemID),
+        new("十二城邦金币", 45044, 0x1B05B2, 50, "辅助道具：古旧的钱箱", OldCofferItemID),
+    ];
+
+    internal static IReadOnlyList<CurrencyExchangeSpec> Get(uint territoryID, CurrencyExchangeReward reward) =>
+        (territoryID, reward) switch
+        {
+            (1252, CurrencyExchangeReward.OldCoffer) => SouthCofferExchanges,
+            (1346, CurrencyExchangeReward.OldCoffer) => NorthCofferExchanges,
+            (1346, CurrencyExchangeReward.UltimateFixative) => NorthFixativeExchanges,
+            _ => Array.Empty<CurrencyExchangeSpec>(),
+        };
+}
+
+internal enum PotFateSupportJobTarget
+{
+    Ninja,
+    Samurai,
+}
+
 internal static class PotFateSupportJobPolicy
 {
     internal const long SwitchLeadSeconds = 1;
     private const long StartDetectionGraceSeconds = 30;
 
-    internal static bool ShouldUseNinja(
+    internal static bool ShouldUseSupportJob(
         long now,
         long nextSpawnTime,
         bool participating,

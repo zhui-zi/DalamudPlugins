@@ -16,6 +16,7 @@ using Dalamud.Game.Gui.Dtr;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Enums;
+using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
@@ -137,6 +138,9 @@ internal sealed partial class OccultPotFeature : IDisposable
     private uint       declineInviteTime;
     private string     declineInviterName = string.Empty;
     private bool       declineInviteSent;
+    private nint       autoAcceptRaiseAddon;
+    private long       autoAcceptRaiseAt;
+    private bool       autoAcceptRaiseSent;
     private ulong      autoReviveTargetID;
     private long       autoReviveAt;
     private readonly Dictionary<ulong, long> autoReviveRetryAfter = [];
@@ -147,8 +151,9 @@ internal sealed partial class OccultPotFeature : IDisposable
     private bool       bmrAiWasEnabled;
     private long       bmrAiSuppressionReleaseAt;
     private CrescentSupportJob? potFatePreviousSupportJob;
+    private CrescentSupportJob? potFateTargetSupportJob;
     private bool       potFateSupportJobSwitchActive;
-    private bool       potFateNinjaConfirmed;
+    private bool       potFateTargetJobConfirmed;
     private bool       potFateSupportJobRestoring;
     private bool       potFateSupportJobRecoveryPending;
     private bool       potFateSupportJobSwitchSuppressed;
@@ -161,28 +166,30 @@ internal sealed partial class OccultPotFeature : IDisposable
     private object?     lastInjectedBmrMovementInstance;
 
     private readonly Queue<CurrencyExchangeRequest> currencyExchangeQueue = [];
-    private readonly Dictionary<uint, long> currencyExchangeRetryAfter = [];
+    private readonly Dictionary<(uint CurrencyItemID, uint RewardItemID), long> currencyExchangeRetryAfter = [];
     private CurrencyExchangeRequest? pendingCurrencyExchange;
     private int        pendingCurrencyBeforeCount;
-    private int        pendingFixativeBeforeCount;
+    private int        pendingRewardBeforeCount;
     private long       pendingCurrencyActionAt;
     private long       pendingCurrencyDeadline;
     private bool       pendingCurrencyConfirmationClicked;
+    private bool       pendingCurrencyPromptLogged;
     private long       nextCurrencyExchangeAt;
     private string     currencyExchangeStatus = string.Empty;
 
     private bool       cofferHuntActive;
     private long       cofferHuntStartedAt;
     private uint       cofferHuntTerritory;
+    private CofferHuntExecutor activeCofferHuntExecutor;
     private bool       drHuntStarted;
     private bool       drOuterRouteActive;
+    private bool       bocchiHuntStarted;
     private bool       cofferHuntScanPending;
     private int        cofferHuntScanBronze;
     private int        cofferHuntScanSilver;
     private long       cofferHuntScanExpireAt;
     private long       pendingCofferHuntAutoDigFor = -1;
     private const long CofferHuntRequiredLeadSeconds = 600;
-    private const long CofferHuntStopLeadSeconds     = 300;
     private const int  CofferHuntSilverCap           = 8;
     private const int  CofferHuntBronzeCap           = 30;
     private const long CofferHuntScanTimeoutMS       = 180_000;
@@ -202,22 +209,11 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     private const uint LureItemID = 2003296;
 
-    private const uint CurrencyExchangeNpcDataID = 1059485;
-    private const uint SilverCoinItemID           = 51975;
-    private const uint GoldCoinItemID             = 51976;
-    private const uint UltimateFixativeItemID      = 51978;
     private const int  CurrencyStackCap           = 9999;
     private const long CurrencyExchangeSessionTimeoutMS = 5_000;
     private const long CurrencyExchangeConfirmTimeoutMS = 5_000;
     private const long CurrencyExchangeRetryCooldownMS = 30_000;
     private const long CurrencyExchangeSpacingMS = 250;
-
-    private static readonly CurrencyExchangeSpec SilverCurrencyExchange =
-        new("十二城邦白银币", SilverCoinItemID, 0x1B0614, 1200);
-    private static readonly CurrencyExchangeSpec GoldCurrencyExchange =
-        new("十二城邦白金币", GoldCoinItemID, 0x1B0615, 1920);
-    private static readonly CurrencyExchangeSpec[] CurrencyExchanges =
-        [SilverCurrencyExchange, GoldCurrencyExchange];
 
     private static readonly string[] DigDirections = ["西北", "西南", "东北", "东南", "正东", "正西", "正南", "正北"];
     private static readonly Regex CofferCountRegex = new(
@@ -491,8 +487,12 @@ internal sealed partial class OccultPotFeature : IDisposable
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PreDraw,    "ContentsFinderConfirm", OnContentsFinderConfirm);
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PostSetup,  "ShopExchangeCurrency", OnCurrencyExchangeAddon);
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PreDraw,    "ShopExchangeCurrency", OnCurrencyExchangeAddon);
+        DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PostSetup,  "ShopExchangeCurrencyDialog", OnCurrencyExchangeDialogAddon);
+        DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PreDraw,    "ShopExchangeCurrencyDialog", OnCurrencyExchangeDialogAddon);
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PostSetup,  "SelectYesno", OnCurrencyExchangeConfirmAddon);
         DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PreDraw,    "SelectYesno", OnCurrencyExchangeConfirmAddon);
+        DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PostSetup,  "SelectYesno", OnAutoAcceptRaiseAddon);
+        DService.Instance().AddonLifecycle.RegisterListener(AddonEvent.PreDraw,    "SelectYesno", OnAutoAcceptRaiseAddon);
         Plugin.PluginInterface.UiBuilder.Draw += OnPostDraw;
         Plugin.PluginInterface.UiBuilder.Draw += DrawOverlayWindow;
 
@@ -514,7 +514,9 @@ internal sealed partial class OccultPotFeature : IDisposable
         DService.Instance().AddonLifecycle.UnregisterListener(OnAreaMapRefresh);
         DService.Instance().AddonLifecycle.UnregisterListener(OnContentsFinderConfirm);
         DService.Instance().AddonLifecycle.UnregisterListener(OnCurrencyExchangeAddon);
+        DService.Instance().AddonLifecycle.UnregisterListener(OnCurrencyExchangeDialogAddon);
         DService.Instance().AddonLifecycle.UnregisterListener(OnCurrencyExchangeConfirmAddon);
+        DService.Instance().AddonLifecycle.UnregisterListener(OnAutoAcceptRaiseAddon);
         FrameworkManager.Instance().Unreg(OnUpdate);
         FrameworkManager.Instance().Unreg(OnPotFateTarget);
         FrameworkManager.Instance().Unreg(OnAutoDigSafety);
@@ -639,7 +641,7 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     public void DrawSettings()
     {
-        ImGui.TextDisabled("请勿同时启用重复的提醒或自动操作。");
+        DrawDependencyNotice();
         ImGui.Spacing();
 
         if (!ImGui.BeginTabBar("###OccultPotSettingsTabs")) return;
@@ -809,6 +811,55 @@ internal sealed partial class OccultPotFeature : IDisposable
         }
     }
 
+    private static void DrawDependencyNotice()
+    {
+        const string text = "新月岛系列功能依赖：BOCCHI、Daily Routines、Lifestream、vnavmesh、BossMod Reborn。";
+
+        var drawList = ImGui.GetWindowDrawList();
+        var start    = ImGui.GetCursorScreenPos();
+        var width    = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
+        var textSize = ImGui.CalcTextSize(text, false, width);
+        var travel   = width + 96f;
+        var shimmerX = start.X - 48f + (float)(ImGui.GetTime() * 110d % travel);
+
+        DrawDependencyLine(drawList, start, text, width, textSize, shimmerX);
+        ImGui.Dummy(textSize);
+    }
+
+    private static void DrawDependencyLine(
+        ImDrawListPtr drawList,
+        Vector2 position,
+        string text,
+        float wrapWidth,
+        Vector2 textSize,
+        float shimmerX)
+    {
+        var font   = ImGui.GetFont();
+        var size   = ImGui.GetFontSize();
+        var shadow = ImGui.ColorConvertFloat4ToU32(new Vector4(0.18f, 0.08f, 0.01f, 0.9f));
+        var gold   = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.65f, 0.12f, 1f));
+        drawList.AddText(font, size, position + Vector2.One, shadow, text, wrapWidth);
+        drawList.AddText(font, size, position, gold, text, wrapWidth);
+
+        const int sliceCount = 12;
+        const float sliceWidth = 8f;
+        for (var i = 0; i < sliceCount; i++)
+        {
+            var x = shimmerX + (i * sliceWidth);
+            if (x >= position.X + textSize.X || x + sliceWidth <= position.X) continue;
+
+            var distance = MathF.Abs((i + 0.5f) - (sliceCount / 2f)) / (sliceCount / 2f);
+            var alpha    = 0.2f + ((1f - distance) * 0.8f);
+            var color    = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 0.82f, alpha));
+            drawList.PushClipRect(
+                new Vector2(x, position.Y),
+                new Vector2(x + sliceWidth, position.Y + textSize.Y),
+                true);
+            drawList.AddText(font, size, position, color, text, wrapWidth);
+            drawList.PopClipRect();
+        }
+    }
+
     private static void ConfigSection(string title)
     {
         ImGui.Spacing();
@@ -931,17 +982,52 @@ internal sealed partial class OccultPotFeature : IDisposable
                     ImGui.TextColored(KnownColor.Gray.ToVector4(),
                         "退出副本并等待 30 秒后重新进入当前南征或北征；需启用 /pdrfe。");
 
-                if (ImGui.Checkbox("FATE / CE 后按岛况自动寻宝", ref config.EnableCofferHunt))
+                if (ImGui.Checkbox("宝箱达到数量时自动寻宝", ref config.EnableCofferHunt))
                     config.Save(this);
                 if (config.EnableCofferHunt)
                 {
                     using (ImRaii.PushIndent())
                     {
+                        ImGui.TextUnformatted("寻宝执行方式");
+                        if (ImGui.RadioButton("DailyRoutines", config.CofferHuntExecutor == CofferHuntExecutor.DailyRoutines))
+                        {
+                            config.CofferHuntExecutor = CofferHuntExecutor.DailyRoutines;
+                            config.Save(this);
+                        }
+
+                        if (ImGui.RadioButton("BOCCHI 宝箱猎人", config.CofferHuntExecutor == CofferHuntExecutor.Bocchi))
+                        {
+                            config.CofferHuntExecutor = CofferHuntExecutor.Bocchi;
+                            config.Save(this);
+                        }
+
+                        ImGui.Spacing();
+                        ImGui.TextUnformatted("魔法罐不足 5 分钟时");
+                        if (ImGui.RadioButton(
+                                "立即终止寻宝并进入挖罐流程",
+                                config.CofferHuntHandoffMode == CofferHuntHandoffMode.InterruptForMagicPot))
+                        {
+                            config.CofferHuntHandoffMode = CofferHuntHandoffMode.InterruptForMagicPot;
+                            config.Save(this);
+                        }
+
+                        if (ImGui.RadioButton(
+                                "完成当前寻宝后再进入挖罐流程",
+                                config.CofferHuntHandoffMode == CofferHuntHandoffMode.FinishCurrentHunt))
+                        {
+                            config.CofferHuntHandoffMode = CofferHuntHandoffMode.FinishCurrentHunt;
+                            config.Save(this);
+                        }
+
                         ImGui.TextColored(KnownColor.Gray.ToVector4(),
                             $"BOCCHI 自动使用魔寻宝后，仅在白银达到 {CofferHuntSilverCap} 或青铜达到 {CofferHuntBronzeCap}，且下个罐子 > 10 分钟时开启。\n" +
-                            $"需启用 BOCCHI 自动魔寻宝，以及 DR「新月岛综合助手」模块；DR 每次随机选择内环或外环，仅运行其中一条。传送到非起始点魔路水晶后，仅在周围 {CofferHuntPlayerAvoidanceRadius:0} yalms 无其他玩家时启动，发现玩家则换水晶重试。\n" +
-                            "成功启动后会优先复用该水晶；若水晶周围有人或传送失败，再尝试其他水晶。\n" +
-                            "进入 5 分钟自动前往窗口后回程并衔接挖罐；否则回程并恢复 BOCCHI 非法模式。");
+                            (config.CofferHuntExecutor == CofferHuntExecutor.DailyRoutines
+                                 ? $"DailyRoutines 每次随机选择内环或外环，仅运行其中一条。传送到非起始点魔路水晶后，仅在周围 {CofferHuntPlayerAvoidanceRadius:0} yalms 无其他玩家时启动，发现玩家则换水晶重试。\n" +
+                                   "成功启动后会优先复用该水晶；若水晶周围有人或传送失败，再尝试其他水晶。\n"
+                                 : "BOCCHI 宝箱猎人从当前位置直接启动，不检查附近玩家，也不预先传送到指定魔路水晶。\n") +
+                            (config.CofferHuntHandoffMode == CofferHuntHandoffMode.InterruptForMagicPot
+                                 ? "魔法罐不足 5 分钟时立即终止寻宝，回程并衔接挖罐；寻宝提前完成时也会直接交接。"
+                                 : "魔法罐不足 5 分钟时继续当前寻宝，完成后回程并衔接挖罐。"));
                     }
                 }
                 if (autoDigActive)
@@ -967,11 +1053,39 @@ internal sealed partial class OccultPotFeature : IDisposable
         ConfigSection("魔法罐 FATE 辅助职业");
         using (ImRaii.PushIndent())
         {
-            if (ImGui.Checkbox("魔法罐 FATE 开始前 1 秒自动切为辅助忍者", ref config.AutoSwitchToNinjaDuringPotFate))
+            if (ImGui.Checkbox("魔法罐 FATE 开始前 1 秒自动切换辅助职业", ref config.AutoSwitchToNinjaDuringPotFate))
             {
                 config.Save(this);
                 if (!config.AutoSwitchToNinjaDuringPotFate)
                     RestoreSupportJobAfterPotFate();
+            }
+
+            if (config.AutoSwitchToNinjaDuringPotFate)
+            {
+                using (ImRaii.PushIndent())
+                {
+                    if (ImGui.RadioButton(
+                            "辅助忍者",
+                            config.PotFateSupportJobTarget == PotFateSupportJobTarget.Ninja) &&
+                        config.PotFateSupportJobTarget != PotFateSupportJobTarget.Ninja)
+                    {
+                        RestoreSupportJobAfterPotFate();
+                        config.PotFateSupportJobTarget = PotFateSupportJobTarget.Ninja;
+                        potFateSupportJobSwitchSuppressed = false;
+                        config.Save(this);
+                    }
+
+                    if (ImGui.RadioButton(
+                            "辅助武士",
+                            config.PotFateSupportJobTarget == PotFateSupportJobTarget.Samurai) &&
+                        config.PotFateSupportJobTarget != PotFateSupportJobTarget.Samurai)
+                    {
+                        RestoreSupportJobAfterPotFate();
+                        config.PotFateSupportJobTarget = PotFateSupportJobTarget.Samurai;
+                        potFateSupportJobSwitchSuppressed = false;
+                        config.Save(this);
+                    }
+                }
             }
 
             ImGui.TextColored(KnownColor.Gray.ToVector4(),
@@ -995,25 +1109,59 @@ internal sealed partial class OccultPotFeature : IDisposable
         }
 
         ConfigUIAutoRevive();
+
+        ConfigSection("死亡时自动接受复活");
+        using (ImRaii.PushIndent())
+        {
+            if (ImGui.Checkbox("自动接受他人复活（延迟 1 秒）", ref config.AutoAcceptRaise))
+            {
+                ResetAutoAcceptRaise();
+                config.Save(this);
+            }
+        }
     }
 
     private void ConfigUICurrencyExchange()
     {
-        ConfigSection("终极固定剂兑换");
+        ConfigSection("新月岛货币兑换");
         using (ImRaii.PushIndent())
         {
-            if (ImGui.Checkbox("白银币或白金币达到 9999 时自动兑换", ref config.EnableAutoCurrencyExchange))
-                config.Save(this);
-
-            var silverCount = GetCurrencyCount(SilverCoinItemID);
-            var goldCount   = GetCurrencyCount(GoldCoinItemID);
-            ImGui.TextUnformatted($"十二城邦白银币: {silverCount}/{CurrencyStackCap}（可兑换 {silverCount / SilverCurrencyExchange.Cost} 个）");
-            ImGui.TextUnformatted($"十二城邦白金币: {goldCount}/{CurrencyStackCap}（可兑换 {goldCount / GoldCurrencyExchange.Cost} 个）");
-
             var busy = pendingCurrencyExchange.HasValue || currencyExchangeQueue.Count > 0;
+            ImGui.TextUnformatted("兑换目标");
+            using (ImRaii.Disabled(busy))
+            {
+                if (ImGui.RadioButton("终极固定剂（仅北征）", config.CurrencyExchangeReward == CurrencyExchangeReward.UltimateFixative))
+                {
+                    config.CurrencyExchangeReward = CurrencyExchangeReward.UltimateFixative;
+                    config.Save(this);
+                }
+
+                if (ImGui.RadioButton("辅助道具：古旧的钱箱（南征与北征）", config.CurrencyExchangeReward == CurrencyExchangeReward.OldCoffer))
+                {
+                    config.CurrencyExchangeReward = CurrencyExchangeReward.OldCoffer;
+                    config.Save(this);
+                }
+            }
+
+            if (ImGui.Checkbox("货币达到 9999 时，在初始点等待期间自动兑换", ref config.EnableAutoCurrencyExchange))
+            {
+                if (config.EnableAutoCurrencyExchange)
+                    currencyExchangeRetryAfter.Clear();
+                else
+                    ResetCurrencyExchange();
+                config.Save(this);
+            }
+
+            var exchanges = CurrencyExchangeCatalog.Get(GameState.TerritoryType, config.CurrencyExchangeReward);
+            foreach (var exchange in exchanges)
+            {
+                var count = GetCurrencyCount(exchange.CurrencyItemID);
+                ImGui.TextUnformatted($"{exchange.CurrencyName}: {count}/{CurrencyStackCap}（可兑换 {count / exchange.Cost} 个）");
+            }
+
             var canExchange = CanExchangeCurrenciesNow(out var unavailableReason);
-            var hasAffordableCurrency = silverCount >= SilverCurrencyExchange.Cost ||
-                                        goldCount >= GoldCurrencyExchange.Cost;
+            var hasAffordableCurrency = exchanges.Any(exchange =>
+                GetCurrencyCount(exchange.CurrencyItemID) >= exchange.Cost);
             using (ImRaii.Disabled(busy || !canExchange || !hasAffordableCurrency))
             {
                 if (ImGui.Button("立即全部兑换"))
@@ -1025,7 +1173,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             else if (!canExchange)
                 ImGui.TextColored(KnownColor.Gray.ToVector4(), unavailableReason);
             else if (!hasAffordableCurrency)
-                ImGui.TextColored(KnownColor.Gray.ToVector4(), "当前两种货币均不足一次兑换。");
+                ImGui.TextColored(KnownColor.Gray.ToVector4(), "当前货币不足一次兑换。");
 
             if (!string.IsNullOrWhiteSpace(currencyExchangeStatus))
                 ImGui.TextWrapped(currencyExchangeStatus);
@@ -1163,22 +1311,13 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         ImGui.Separator();
 
-        using (ImRaii.Disabled(!InOccultMapZone || autoDigActive || cofferHuntActive || undergroundTestActive))
-        {
-            if (ImGui.Button("手动寻宝"))
-                ManualStartCofferHunt();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("在当前位置随机启动 DR 内环或外环，每次仅运行其中一条\n支持南征与北征；进入距刷罐 5 分钟窗口或所选路线完成时自动停止");
-
-        ImGui.SameLine();
         using (ImRaii.Disabled(!autoDigActive && !cofferHuntActive))
         {
-            if (ImGui.Button("终止挖罐"))
+            if (ImGui.Button("终止当前操作"))
                 StopAutoDigManually();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("立即停止当前自动挖罐 / 寻宝（本轮罐子不再自动触发；下个罐子仍会照常开始）");
+            ImGui.SetTooltip("立即停止当前自动挖罐或寻宝（本轮罐子不再自动触发；下个罐子仍会照常开始）");
     }
 
     private void DrawOverlayWindow()
@@ -1210,6 +1349,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         FrameworkManager.Instance().Unreg(OnAutoRevive);
         ResetAutoReviveCandidate();
         ResetAutoReviveConfirmation();
+        ResetAutoAcceptRaise();
         autoReviveRetryAfter.Clear();
         ResetCurrencyExchange();
         battleContentSettling = false;
@@ -1543,9 +1683,15 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     private bool CanExchangeCurrenciesNow(out string reason)
     {
-        if (GameState.TerritoryType != OccultNorthTerritory)
+        if (!InOccultMapZone)
         {
-            reason = "仅可在新月岛北方海角使用。";
+            reason = "仅可在新月岛内使用。";
+            return false;
+        }
+
+        if (CurrencyExchangeCatalog.Get(GameState.TerritoryType, config.CurrencyExchangeReward).Count == 0)
+        {
+            reason = "终极固定剂仅可在新月岛北方海角兑换。";
             return false;
         }
 
@@ -1568,6 +1714,14 @@ internal sealed partial class OccultPotFeature : IDisposable
             return false;
         }
 
+        if (!CurrencyExchangeLocationPolicy.IsNearInitialAetheryte(
+                localPlayer.Position,
+                GetCofferHuntBasePosition(GameState.TerritoryType)))
+        {
+            reason = "仅在靠近初始点魔路水晶等待时兑换。";
+            return false;
+        }
+
         var condition = DService.Instance().Condition;
         if (condition[ConditionFlag.BetweenAreas] || condition[ConditionFlag.BetweenAreas51])
         {
@@ -1575,7 +1729,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             return false;
         }
 
-        if (AddonSelectYesnoEvent.CheckConfirm())
+        if (HasActiveSelectYesno())
         {
             reason = "存在待处理确认窗口，暂缓兑换。";
             return false;
@@ -1611,14 +1765,14 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         var now = Environment.TickCount64;
         var queued = 0;
-        foreach (var exchange in CurrencyExchanges)
+        foreach (var exchange in CurrencyExchangeCatalog.Get(GameState.TerritoryType, config.CurrencyExchangeReward))
         {
             var count = GetCurrencyCount(exchange.CurrencyItemID);
             if (count < exchange.Cost || automatic && count < CurrencyStackCap)
                 continue;
 
             if (automatic &&
-                currencyExchangeRetryAfter.TryGetValue(exchange.CurrencyItemID, out var retryAfter) &&
+                currencyExchangeRetryAfter.TryGetValue((exchange.CurrencyItemID, exchange.RewardItemID), out var retryAfter) &&
                 now < retryAfter)
                 continue;
 
@@ -1629,7 +1783,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (queued == 0)
         {
             if (!automatic)
-                currencyExchangeStatus = "当前两种货币均不足一次兑换。";
+                currencyExchangeStatus = "当前货币不足一次兑换。";
             return;
         }
 
@@ -1640,13 +1794,11 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     private unsafe void OnCurrencyExchangeAddon(AddonEvent _, AddonArgs args)
     {
-        if (!pendingCurrencyExchange.HasValue || args.Addon == nint.Zero)
-            return;
-
-        args.Addon.ToStruct()->IsVisible = false;
+        if (!pendingCurrencyExchange.HasValue || args.Addon == nint.Zero) return;
+        args.Addon.ToStruct()->IsVisible = true;
     }
 
-    private void OnCurrencyExchangeConfirmAddon(AddonEvent _, AddonArgs args)
+    private unsafe void OnCurrencyExchangeDialogAddon(AddonEvent _, AddonArgs args)
     {
         if (pendingCurrencyExchange is not { } pending ||
             pendingCurrencyActionAt != 0 ||
@@ -1656,20 +1808,86 @@ internal sealed partial class OccultPotFeature : IDisposable
             return;
         }
 
-        if (!AddonSelectYesnoEvent.ClickYes([pending.Spec.Name, "终极固定剂"]))
-            return;
+        var addon = args.Addon.ToStruct();
+        if (!addon->IsReady || !addon->IsVisible) return;
 
-        pendingCurrencyConfirmationClicked = true;
-        currencyExchangeStatus = $"已自动确认{pending.Spec.Name}兑换，等待库存更新…";
-        Plugin.Log.Information(
-            $"[KeitaToolbox.MagicPot] Auto-confirmed remote currency exchange event={pending.Spec.EventID:X}, item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
+        var exchangeButton = addon->GetComponentButtonById(17);
+        if (exchangeButton == null || !exchangeButton->IsEnabled) return;
+
+        exchangeButton->Click();
+        MarkCurrencyExchangeConfirmed(pending, "ShopExchangeCurrencyDialog");
     }
 
-    private static unsafe void SuppressCurrencyExchangeWindow()
+    private unsafe void OnCurrencyExchangeConfirmAddon(AddonEvent _, AddonArgs args)
+    {
+        if (pendingCurrencyExchange is not { } pending ||
+            pendingCurrencyActionAt != 0 ||
+            pendingCurrencyConfirmationClicked ||
+            args.Addon.IsNull)
+        {
+            return;
+        }
+
+        TryConfirmCurrencyExchangeSelectYesno(pending, args.Addon.ToStruct(), "SelectYesnoLifecycle");
+    }
+
+    private unsafe void TryConfirmPendingCurrencyExchange(CurrencyExchangeRequest pending)
+    {
+        if (pendingCurrencyConfirmationClicked)
+            return;
+
+        var addon = RaptureAtkUnitManager.Instance()->GetAddonByName("SelectYesno");
+        TryConfirmCurrencyExchangeSelectYesno(pending, addon, "SelectYesnoFramework");
+    }
+
+    private unsafe void TryConfirmCurrencyExchangeSelectYesno(
+        CurrencyExchangeRequest pending,
+        AtkUnitBase* addonBase,
+        string source)
+    {
+        if (addonBase == null || !addonBase->IsReady || !addonBase->IsVisible)
+            return;
+
+        var rewardConfirmText = pending.Spec.RewardName.Contains('：')
+                                    ? pending.Spec.RewardName[(pending.Spec.RewardName.IndexOf('：') + 1)..]
+                                    : pending.Spec.RewardName;
+        var addon = (AddonSelectYesno*)addonBase;
+        var promptText = GetSelectYesnoPromptText(addon);
+        if (!pendingCurrencyPromptLogged)
+        {
+            pendingCurrencyPromptLogged = true;
+            var promptMatches = CurrencyExchangeConfirmationPolicy.MatchesPrompt(
+                promptText,
+                pending.Spec.CurrencyName,
+                rewardConfirmText);
+            Plugin.Log.Information(
+                $"[KeitaToolbox.MagicPot] Observed event-scoped currency confirmation source={source}, promptMatch={promptMatches}, prompt={promptText.Replace('\r', ' ').Replace('\n', ' ')}");
+        }
+
+        if (!AddonSelectYesnoEvent.ClickYes())
+            return;
+
+        MarkCurrencyExchangeConfirmed(pending, source);
+    }
+
+    private void MarkCurrencyExchangeConfirmed(CurrencyExchangeRequest pending, string addonName)
+    {
+        pendingCurrencyConfirmationClicked = true;
+        currencyExchangeStatus = $"已自动确认{pending.Spec.CurrencyName}兑换，等待库存更新…";
+        Plugin.Log.Information(
+            $"[KeitaToolbox.MagicPot] Auto-confirmed remote currency exchange addon={addonName}, event={pending.Spec.EventID:X}, currency={pending.Spec.CurrencyItemID}, reward={pending.Spec.RewardItemID}, quantity={pending.Quantity}");
+    }
+
+    private static unsafe void EnsureCurrencyExchangeWindowVisible()
     {
         var addon = RaptureAtkUnitManager.Instance()->GetAddonByName("ShopExchangeCurrency");
-        if (addon != null)
-            addon->IsVisible = false;
+        if (addon != null) addon->IsVisible = true;
+    }
+
+    private static unsafe bool HasActiveSelectYesno()
+    {
+        var addon = RaptureAtkUnitManager.Instance()->GetAddonByName("SelectYesno");
+        return addon != null && addon->IsReady && addon->IsVisible;
     }
 
     private static unsafe bool TrySendCurrencyExchangeAction(
@@ -1685,7 +1903,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         var items = agent->ItemReceiveSpan;
         for (var index = 0; index < items.Length; index++)
         {
-            if (items[index].ItemId != UltimateFixativeItemID)
+            if (items[index].ItemId != request.Spec.RewardItemID)
                 continue;
 
             itemIndex = index;
@@ -1708,7 +1926,7 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     private void DriveCurrencyExchange()
     {
-        if (GameState.TerritoryType != OccultNorthTerritory)
+        if (!InOccultMapZone)
             return;
 
         var now = Environment.TickCount64;
@@ -1720,7 +1938,7 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         if (pendingCurrencyExchange is { } pending)
         {
-            SuppressCurrencyExchangeWindow();
+            EnsureCurrencyExchangeWindowVisible();
 
             if (pendingCurrencyActionAt > 0)
             {
@@ -1735,44 +1953,47 @@ internal sealed partial class OccultPotFeature : IDisposable
                             return;
 
                         CompleteCurrencyExchangeSession(pending.Spec.EventID);
-                        FailCurrencyExchange(pending, now, $"未加载{pending.Spec.Name}兑换数据，30 秒后重试。");
+                        FailCurrencyExchange(pending, now, $"未加载{pending.Spec.CurrencyName}兑换数据。");
                         return;
                     }
 
                     pendingCurrencyActionAt = 0;
                     pendingCurrencyDeadline = now + CurrencyExchangeConfirmTimeoutMS;
-                    currencyExchangeStatus = $"已发送{pending.Spec.Name}兑换 ×{pending.Quantity}，等待库存确认…";
+                    currencyExchangeStatus = $"已发送{pending.Spec.CurrencyName}兑换 ×{pending.Quantity}，等待库存确认…";
                     Plugin.Log.Information(
-                        $"[KeitaToolbox.MagicPot] Sent remote currency exchange through AgentShop event={pending.Spec.EventID:X}, item={pending.Spec.CurrencyItemID}, shopIndex={itemIndex}, quantity={pending.Quantity}");
+                        $"[KeitaToolbox.MagicPot] Sent remote currency exchange through AgentShop event={pending.Spec.EventID:X}, currency={pending.Spec.CurrencyItemID}, reward={pending.Spec.RewardItemID}, shopIndex={itemIndex}, quantity={pending.Quantity}");
                 }
                 catch (Exception ex)
                 {
                     CompleteCurrencyExchangeSession(pending.Spec.EventID);
-                    FailCurrencyExchange(pending, now, $"发送{pending.Spec.Name}兑换动作包失败。", ex);
+                    FailCurrencyExchange(pending, now, $"发送{pending.Spec.CurrencyName}兑换动作包失败。", ex);
                 }
 
                 return;
             }
 
+            TryConfirmPendingCurrencyExchange(pending);
+
             var currentCount = GetCurrencyCount(pending.Spec.CurrencyItemID);
-            var currentFixativeCount = GetCurrencyCount(UltimateFixativeItemID);
+            var currentRewardCount = GetCurrencyCount(pending.Spec.RewardItemID);
             var expectedCurrencyCount = pendingCurrencyBeforeCount - pending.Quantity * pending.Spec.Cost;
             var currencyConfirmed = currentCount <= expectedCurrencyCount;
-            var fixativeConfirmed = currentFixativeCount >= pendingFixativeBeforeCount + pending.Quantity;
-            if (currencyConfirmed || fixativeConfirmed)
+            var rewardConfirmed = currentRewardCount >= pendingRewardBeforeCount + pending.Quantity;
+            if (currencyConfirmed || rewardConfirmed)
             {
                 CompleteCurrencyExchangeSession(pending.Spec.EventID);
                 CloseCurrencyExchangeWindow();
-                currencyExchangeRetryAfter.Remove(pending.Spec.CurrencyItemID);
+                currencyExchangeRetryAfter.Remove((pending.Spec.CurrencyItemID, pending.Spec.RewardItemID));
                 pendingCurrencyExchange = null;
                 pendingCurrencyBeforeCount = 0;
-                pendingFixativeBeforeCount = 0;
+                pendingRewardBeforeCount = 0;
                 pendingCurrencyActionAt = 0;
                 pendingCurrencyDeadline = 0;
                 pendingCurrencyConfirmationClicked = false;
+                pendingCurrencyPromptLogged = false;
                 nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
 
-                var message = $"{pending.Spec.Name}已兑换为终极固定剂 ×{pending.Quantity}";
+                var message = $"{pending.Spec.CurrencyName}已兑换为{pending.Spec.RewardName} ×{pending.Quantity}";
                 currencyExchangeStatus = currencyExchangeQueue.Count == 0
                                              ? $"{message}；本轮兑换完成。"
                                              : $"{message}；正在等待下一种货币。";
@@ -1787,8 +2008,8 @@ internal sealed partial class OccultPotFeature : IDisposable
 
             CompleteCurrencyExchangeSession(pending.Spec.EventID);
             var timeoutMessage = pending.Automatic
-                                     ? $"未确认{pending.Spec.Name}库存下降，30 秒后再自动尝试。"
-                                     : $"未确认{pending.Spec.Name}库存下降，请检查背包容量后重试。";
+                                     ? $"未确认{pending.Spec.CurrencyName}库存下降。"
+                                     : $"未确认{pending.Spec.CurrencyName}库存下降，请检查背包容量后重试。";
             FailCurrencyExchange(pending, now, timeoutMessage);
             return;
         }
@@ -1818,22 +2039,23 @@ internal sealed partial class OccultPotFeature : IDisposable
 
             try
             {
-                var fixativeBeforeCount = GetCurrencyCount(UltimateFixativeItemID);
+                var rewardBeforeCount = GetCurrencyCount(request.Spec.RewardItemID);
                 new EventStartPackt(LocalPlayerState.EntityID, request.Spec.EventID).Send();
 
                 pendingCurrencyExchange = request with { Quantity = quantity };
                 pendingCurrencyBeforeCount = currentCount;
-                pendingFixativeBeforeCount = fixativeBeforeCount;
+                pendingRewardBeforeCount = rewardBeforeCount;
                 pendingCurrencyActionAt = now;
                 pendingCurrencyDeadline = now + CurrencyExchangeSessionTimeoutMS;
                 pendingCurrencyConfirmationClicked = false;
-                currencyExchangeStatus = $"正在建立{request.Spec.Name}兑换会话…";
+                pendingCurrencyPromptLogged = false;
+                currencyExchangeStatus = $"正在建立{request.Spec.CurrencyName}兑换会话…";
                 Plugin.Log.Information(
-                    $"[KeitaToolbox.MagicPot] Started remote currency exchange npc={CurrencyExchangeNpcDataID}, player={LocalPlayerState.EntityID:X}, event={request.Spec.EventID:X}, item={request.Spec.CurrencyItemID}, quantity={quantity}");
+                    $"[KeitaToolbox.MagicPot] Started remote currency exchange territory={GameState.TerritoryType}, player={LocalPlayerState.EntityID:X}, event={request.Spec.EventID:X}, currency={request.Spec.CurrencyItemID}, reward={request.Spec.RewardItemID}, quantity={quantity}");
             }
             catch (Exception ex)
             {
-                FailCurrencyExchange(request with { Quantity = quantity }, now, $"建立{request.Spec.Name}兑换会话失败。", ex);
+                FailCurrencyExchange(request with { Quantity = quantity }, now, $"建立{request.Spec.CurrencyName}兑换会话失败。", ex);
             }
 
             return;
@@ -1849,10 +2071,11 @@ internal sealed partial class OccultPotFeature : IDisposable
         CloseCurrencyExchangeWindow();
         pendingCurrencyExchange = null;
         pendingCurrencyBeforeCount = 0;
-        pendingFixativeBeforeCount = 0;
+        pendingRewardBeforeCount = 0;
         pendingCurrencyActionAt = 0;
         pendingCurrencyDeadline = 0;
         pendingCurrencyConfirmationClicked = false;
+        pendingCurrencyPromptLogged = false;
         nextCurrencyExchangeAt = 0;
         currencyExchangeStatus = "魔法罐自动化期间已暂停兑换。";
         Plugin.Log.Information(
@@ -1865,13 +2088,22 @@ internal sealed partial class OccultPotFeature : IDisposable
         string message,
         Exception? exception = null)
     {
-        currencyExchangeRetryAfter[request.Spec.CurrencyItemID] = now + CurrencyExchangeRetryCooldownMS;
+        currencyExchangeRetryAfter[(request.Spec.CurrencyItemID, request.Spec.RewardItemID)] = now + CurrencyExchangeRetryCooldownMS;
+        if (request.Automatic)
+        {
+            currencyExchangeQueue.Clear();
+            config.EnableAutoCurrencyExchange = false;
+            config.Save(this);
+            message += " 自动兑换已关闭，请确认后重新开启。";
+        }
+
         pendingCurrencyExchange = null;
         pendingCurrencyBeforeCount = 0;
-        pendingFixativeBeforeCount = 0;
+        pendingRewardBeforeCount = 0;
         pendingCurrencyActionAt = 0;
         pendingCurrencyDeadline = 0;
         pendingCurrencyConfirmationClicked = false;
+        pendingCurrencyPromptLogged = false;
         nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
         currencyExchangeStatus = message;
         CloseCurrencyExchangeWindow();
@@ -1904,10 +2136,11 @@ internal sealed partial class OccultPotFeature : IDisposable
         currencyExchangeRetryAfter.Clear();
         pendingCurrencyExchange = null;
         pendingCurrencyBeforeCount = 0;
-        pendingFixativeBeforeCount = 0;
+        pendingRewardBeforeCount = 0;
         pendingCurrencyActionAt = 0;
         pendingCurrencyDeadline = 0;
         pendingCurrencyConfirmationClicked = false;
+        pendingCurrencyPromptLogged = false;
         nextCurrencyExchangeAt = 0;
         currencyExchangeStatus = string.Empty;
     }
@@ -2046,6 +2279,77 @@ internal sealed partial class OccultPotFeature : IDisposable
         declineInviteTime = 0;
         declineInviterName = string.Empty;
         declineInviteSent = false;
+    }
+
+    private unsafe void OnAutoAcceptRaiseAddon(AddonEvent _, AddonArgs args)
+    {
+        var agentModule = AgentModule.Instance();
+        var agentInterface = agentModule == null ? null : agentModule->GetAgentByInternalId(AgentId.Revive);
+        var reviveAgent = agentInterface == null ? null : (AgentRevive*)agentInterface;
+        var reviveState = reviveAgent == null ? (byte)0 : reviveAgent->ReviveState;
+        var resurrectionTimeLeft = reviveAgent == null ? 0 : reviveAgent->ResurrectionTimeLeft;
+        var resurrectingPlayerID = reviveAgent == null ? 0 : reviveAgent->ResurrectingPlayerId;
+        var localPlayer = DService.Instance().ObjectTable.LocalPlayer;
+        var betweenAreas = DService.Instance().Condition[ConditionFlag.BetweenAreas] ||
+                           DService.Instance().Condition[ConditionFlag.BetweenAreas51];
+        var promptText = GetSelectYesnoPromptText(args);
+        var promptMatchesRaise = AutoAcceptRaisePolicy.MatchesPrompt(promptText);
+
+        if (!AutoAcceptRaisePolicy.CanAccept(
+                config.AutoAcceptRaise,
+                InOccultMapZone,
+                localPlayer is { IsDead: true },
+                betweenAreas,
+                promptText))
+        {
+            ResetAutoAcceptRaise();
+            return;
+        }
+
+        if (autoAcceptRaiseAddon != args.Addon.Address ||
+            autoAcceptRaiseAt == 0 && !autoAcceptRaiseSent)
+        {
+            autoAcceptRaiseAddon = args.Addon.Address;
+            autoAcceptRaiseAt = Environment.TickCount64 + 1000;
+            autoAcceptRaiseSent = false;
+            Plugin.Log.Information(
+                $"[KeitaToolbox.MagicPot] Incoming raise detected; state={reviveState}, timeLeft={resurrectionTimeLeft}, playerID={resurrectingPlayerID}, textMatch={promptMatchesRaise}");
+            return;
+        }
+
+        if (autoAcceptRaiseSent || Environment.TickCount64 < autoAcceptRaiseAt)
+            return;
+
+        if (AddonSelectYesnoEvent.ClickYes())
+        {
+            autoAcceptRaiseSent = true;
+            autoAcceptRaiseAt = 0;
+            Plugin.Log.Information("[KeitaToolbox.MagicPot] Accepted incoming raise after 1 second.");
+        }
+    }
+
+    private static unsafe string GetSelectYesnoPromptText(AddonArgs args)
+    {
+        if (args.Addon.IsNull)
+            return string.Empty;
+
+        var addon = (AddonSelectYesno*)args.Addon.Address;
+        return GetSelectYesnoPromptText(addon);
+    }
+
+    private static unsafe string GetSelectYesnoPromptText(AddonSelectYesno* addon)
+    {
+        if (addon == null || addon->PromptText == null)
+            return string.Empty;
+
+        return ((Utf8String*)&addon->PromptText->NodeText)->ToString();
+    }
+
+    private void ResetAutoAcceptRaise()
+    {
+        autoAcceptRaiseAddon = nint.Zero;
+        autoAcceptRaiseAt = 0;
+        autoAcceptRaiseSent = false;
     }
 
     private void Notify(Pot pot, int minutes)
@@ -2533,16 +2837,23 @@ internal sealed partial class OccultPotFeature : IDisposable
         var participating = IsParticipatingInPotFate();
         var potFateActive = pots.Any(pot =>
             pot.TerritoryID == GameState.TerritoryType && pot.Alive);
-        var shouldUseNinja = PotFateSupportJobPolicy.ShouldUseNinja(
+        var shouldUseSupportJob = PotFateSupportJobPolicy.ShouldUseSupportJob(
             DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             nextSpawnTime,
             participating,
             potFateSupportJobSwitchActive);
-        if (!config.AutoSwitchToNinjaDuringPotFate || !shouldUseNinja)
+        if (!config.AutoSwitchToNinjaDuringPotFate || !shouldUseSupportJob)
         {
             RestoreSupportJobAfterPotFate();
             if (!potFateActive && !participating)
                 potFateSupportJobSwitchSuppressed = false;
+            return;
+        }
+
+        if (potFateSupportJobSwitchActive &&
+            potFateTargetSupportJob?.JobType != GetConfiguredPotFateSupportJob().JobType)
+        {
+            RestoreSupportJobAfterPotFate();
             return;
         }
 
@@ -2563,24 +2874,33 @@ internal sealed partial class OccultPotFeature : IDisposable
         {
             if (currentJob is null) return;
 
+            var targetJob = GetConfiguredPotFateSupportJob();
             potFatePreviousSupportJob = currentJob;
+            potFateTargetSupportJob = targetJob;
             potFateSupportJobSwitchActive = true;
-            potFateNinjaConfirmed = currentJob.JobType == CrescentSupportJobType.Ninja;
+            potFateTargetJobConfirmed = currentJob.JobType == targetJob.JobType;
             potFateSupportJobRestoring = false;
-            RememberPendingSupportJobRestore(currentJob);
-            if (!potFateNinjaConfirmed)
+            RememberPendingSupportJobRestore(currentJob, targetJob);
+            if (!potFateTargetJobConfirmed)
                 potFateSupportJobRetry.Start(Environment.TickCount64);
             DService.Instance().Log.Information(
-                $"[KeitaToolbox.MagicPot] Magic Pot support job switch armed; previous={currentJob.JobType}");
+                $"[KeitaToolbox.MagicPot] Magic Pot support job switch armed; previous={currentJob.JobType}, target={targetJob.JobType}");
         }
 
-        if (currentJob?.JobType == CrescentSupportJobType.Ninja)
+        var activeTargetJob = potFateTargetSupportJob;
+        if (activeTargetJob is null)
         {
-            if (!potFateNinjaConfirmed)
+            ClearPotFateSupportJobSwitch();
+            return;
+        }
+
+        if (currentJob?.JobType == activeTargetJob.JobType)
+        {
+            if (!potFateTargetJobConfirmed)
             {
-                potFateNinjaConfirmed = true;
+                potFateTargetJobConfirmed = true;
                 DService.Instance().Log.Information(
-                    "[KeitaToolbox.MagicPot] Phantom Ninja confirmed for Magic Pot FATE");
+                    $"[KeitaToolbox.MagicPot] Support job confirmed for Magic Pot FATE; target={activeTargetJob.JobType}");
             }
 
             potFateSupportJobRetry.Clear();
@@ -2591,15 +2911,22 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (potFateSupportJobRetry.IsExpired(now))
         {
             DService.Instance().Log.Warning(
-                "[KeitaToolbox.MagicPot] Phantom Ninja switch timed out; suppressing retries until the next Magic Pot FATE");
+                $"[KeitaToolbox.MagicPot] Support job switch timed out; target={activeTargetJob.JobType}; suppressing retries until the next Magic Pot FATE");
             potFateSupportJobRetry.Clear();
             potFateSupportJobSwitchSuppressed = true;
             return;
         }
 
         if (potFateSupportJobRetry.TryTake(now))
-            CrescentSupportJob.Ninja.ChangeTo();
+            activeTargetJob.ChangeTo();
     }
+
+    private CrescentSupportJob GetConfiguredPotFateSupportJob() =>
+        config.PotFateSupportJobTarget switch
+        {
+            PotFateSupportJobTarget.Samurai => CrescentSupportJob.Samurai,
+            _                               => CrescentSupportJob.Ninja,
+        };
 
     private unsafe bool IsParticipatingInPotFate()
     {
@@ -2613,7 +2940,8 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (!potFateSupportJobSwitchActive) return;
 
         var previousJob = potFatePreviousSupportJob;
-        if (previousJob is null)
+        var targetJob = potFateTargetSupportJob;
+        if (previousJob is null || targetJob is null)
         {
             ClearPotFateSupportJobSwitch();
             return;
@@ -2636,21 +2964,21 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (!ResolvePendingSupportJobRecovery(currentJob))
             return;
 
-        if (!potFateNinjaConfirmed)
+        if (!potFateTargetJobConfirmed)
         {
-            if (currentJob?.JobType != CrescentSupportJobType.Ninja)
+            if (currentJob?.JobType != targetJob.JobType)
             {
                 DService.Instance().Log.Information(
-                    "[KeitaToolbox.MagicPot] Skipped support job restoration because the Ninja switch was never confirmed");
+                    $"[KeitaToolbox.MagicPot] Skipped support job restoration because the target switch was never confirmed; target={targetJob.JobType}");
                 ClearPotFateSupportJobSwitch();
                 return;
             }
 
-            potFateNinjaConfirmed = true;
+            potFateTargetJobConfirmed = true;
         }
 
         if (currentJob is not null &&
-            currentJob.JobType != CrescentSupportJobType.Ninja &&
+            currentJob.JobType != targetJob.JobType &&
             currentJob.JobType != previousJob.JobType)
         {
             DService.Instance().Log.Information(
@@ -2699,19 +3027,25 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         var previousJob = CrescentSupportJob.AllJobs.FirstOrDefault(
             job => (int)job.JobType == config.PendingSupportJobRestore);
-        if (previousJob is null)
+        var targetJobType = config.PendingSupportJobTarget >= 0
+                                ? config.PendingSupportJobTarget
+                                : (int)CrescentSupportJobType.Ninja;
+        var targetJob = CrescentSupportJob.AllJobs.FirstOrDefault(
+            job => (int)job.JobType == targetJobType);
+        if (previousJob is null || targetJob is null)
         {
             ClearPendingSupportJobRestore();
             return;
         }
 
         potFatePreviousSupportJob = previousJob;
+        potFateTargetSupportJob = targetJob;
         potFateSupportJobSwitchActive = true;
         potFateSupportJobRecoveryPending = true;
         potFateSupportJobRestoring = false;
         potFateSupportJobRetry.Clear();
         DService.Instance().Log.Information(
-            $"[KeitaToolbox.MagicPot] Resumed pending support job restoration; previous={previousJob.JobType}");
+            $"[KeitaToolbox.MagicPot] Resumed pending support job restoration; previous={previousJob.JobType}, target={targetJob.JobType}");
     }
 
     private bool ResolvePendingSupportJobRecovery(CrescentSupportJob? currentJob)
@@ -2722,42 +3056,48 @@ internal sealed partial class OccultPotFeature : IDisposable
             return false;
 
         potFateSupportJobRecoveryPending = false;
-        if (currentJob.JobType == CrescentSupportJobType.Ninja)
+        var targetJob = potFateTargetSupportJob;
+        if (targetJob is not null && currentJob.JobType == targetJob.JobType)
         {
-            potFateNinjaConfirmed = true;
+            potFateTargetJobConfirmed = true;
             return true;
         }
 
         DService.Instance().Log.Information(
-            $"[KeitaToolbox.MagicPot] Cleared pending support job restoration because Ninja is no longer active; current={currentJob.JobType}");
+            $"[KeitaToolbox.MagicPot] Cleared pending support job restoration because the target job is no longer active; current={currentJob.JobType}, target={targetJob?.JobType}");
         ClearPotFateSupportJobSwitch();
         return false;
     }
 
-    private void RememberPendingSupportJobRestore(CrescentSupportJob previousJob)
+    private void RememberPendingSupportJobRestore(CrescentSupportJob previousJob, CrescentSupportJob targetJob)
     {
         var jobType = (int)previousJob.JobType;
-        if (config.PendingSupportJobRestore == jobType)
+        var targetJobType = (int)targetJob.JobType;
+        if (config.PendingSupportJobRestore == jobType &&
+            config.PendingSupportJobTarget == targetJobType)
             return;
 
         config.PendingSupportJobRestore = jobType;
+        config.PendingSupportJobTarget = targetJobType;
         config.Save(this);
     }
 
     private void ClearPendingSupportJobRestore()
     {
-        if (config.PendingSupportJobRestore < 0)
+        if (config.PendingSupportJobRestore < 0 && config.PendingSupportJobTarget < 0)
             return;
 
         config.PendingSupportJobRestore = -1;
+        config.PendingSupportJobTarget = -1;
         config.Save(this);
     }
 
     private void ClearPotFateSupportJobSwitch()
     {
         potFatePreviousSupportJob = null;
+        potFateTargetSupportJob = null;
         potFateSupportJobSwitchActive = false;
-        potFateNinjaConfirmed = false;
+        potFateTargetJobConfirmed = false;
         potFateSupportJobRestoring = false;
         potFateSupportJobRecoveryPending = false;
         potFateSupportJobRetry.Clear();
@@ -3688,12 +4028,6 @@ internal sealed partial class OccultPotFeature : IDisposable
         Underground
     }
 
-    private readonly record struct CurrencyExchangeSpec(
-        string Name,
-        uint CurrencyItemID,
-        uint EventID,
-        int Cost);
-
     private readonly record struct CurrencyExchangeRequest(
         CurrencyExchangeSpec Spec,
         bool Automatic,
@@ -3727,7 +4061,9 @@ internal sealed partial class OccultPotFeature : IDisposable
         public bool      KeepPotFateEnemyTargeted = true;
         public bool      KeepBmrAiDisabledDuringPotFate;
         public bool      AutoSwitchToNinjaDuringPotFate;
+        public PotFateSupportJobTarget PotFateSupportJobTarget;
         public int       PendingSupportJobRestore = -1;
+        public int       PendingSupportJobTarget = -1;
         public bool      EnableAutoDig;
         public bool      AutoDigSkipDanger    = true;
         public bool      AutoDigUndergroundDanger;
@@ -3744,12 +4080,16 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         [JsonProperty("EnableBocchiHunt")]
         public bool      EnableCofferHunt;
+        public CofferHuntExecutor CofferHuntExecutor;
+        public CofferHuntHandoffMode CofferHuntHandoffMode;
         public uint      CofferHuntSouthPreferredAetheryteDataID;
         public uint      CofferHuntNorthPreferredAetheryteDataID = CofferHuntNorthInitialPreferredAetheryteDataID;
 
         public bool      EnableAutoRevive;
         public bool      AutoRevivePartyOnly = true;
+        public bool      AutoAcceptRaise;
         public bool      EnableAutoCurrencyExchange;
+        public CurrencyExchangeReward CurrencyExchangeReward = CurrencyExchangeReward.UltimateFixative;
 
         public static Config Load(OccultPotFeature _)
         {
@@ -4460,6 +4800,105 @@ internal sealed partial class OccultPotFeature : IDisposable
             }
         }
 
+        public static bool TryStartTreasureHunter(out string result)
+        {
+            result = "BOCCHI 或宝箱模块不可用";
+            try
+            {
+                var bocchi = ResolvePlugin();
+                if (bocchi == null) return false;
+
+                var treasureModule = ResolveModule(bocchi, "BOCCHI.Modules.Treasure.TreasureModule");
+                var hunter = treasureModule == null ? null : GetMember(treasureModule, "hunter");
+                if (hunter == null) return false;
+
+                const BindingFlags bf = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+                var runningField = FindField(hunter.GetType(), "running", bf);
+                var stopwatch = GetMember(hunter, "stopwatch") as System.Diagnostics.Stopwatch;
+                if (runningField == null || stopwatch == null)
+                {
+                    result = "BOCCHI 宝箱猎人接口不兼容";
+                    return false;
+                }
+
+                if (runningField.GetValue(hunter) is true)
+                {
+                    result = "already running";
+                    return true;
+                }
+
+                runningField.SetValue(hunter, true);
+                stopwatch.Restart();
+                result = "started";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                result = ex.GetType().Name;
+                DService.Instance().Log.Warning(
+                    $"[KeitaToolbox.MagicPot] BOCCHI treasure hunter start failed: {result}");
+                return false;
+            }
+        }
+
+        public static bool TryGetTreasureHunterRunning(out bool running)
+        {
+            running = false;
+            try
+            {
+                var bocchi = ResolvePlugin();
+                var treasureModule = bocchi == null
+                                         ? null
+                                         : ResolveModule(bocchi, "BOCCHI.Modules.Treasure.TreasureModule");
+                var hunter = treasureModule == null ? null : GetMember(treasureModule, "hunter");
+                if (hunter == null) return false;
+
+                const BindingFlags bf = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+                var runningField = FindField(hunter.GetType(), "running", bf);
+                if (runningField?.GetValue(hunter) is not bool value) return false;
+
+                running = value;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool TryStopTreasureHunter(out string result)
+        {
+            result = "BOCCHI 或宝箱模块不可用";
+            try
+            {
+                var bocchi = ResolvePlugin();
+                var treasureModule = bocchi == null
+                                         ? null
+                                         : ResolveModule(bocchi, "BOCCHI.Modules.Treasure.TreasureModule");
+                var hunter = treasureModule == null ? null : GetMember(treasureModule, "hunter");
+                if (hunter == null) return false;
+
+                const BindingFlags bf = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+                var teardown = hunter.GetType().GetMethod("Teardown", bf, null, Type.EmptyTypes, null);
+                if (teardown == null)
+                {
+                    result = "BOCCHI 宝箱猎人接口不兼容";
+                    return false;
+                }
+
+                teardown.Invoke(hunter, null);
+                result = "stopped";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                result = ex.GetType().Name;
+                DService.Instance().Log.Warning(
+                    $"[KeitaToolbox.MagicPot] BOCCHI treasure hunter stop failed: {result}");
+                return false;
+            }
+        }
+
         private static object? ResolveService(object bocchi, string serviceTypeName)
         {
             var serviceProvider = GetMember(bocchi, "services") as IServiceProvider;
@@ -4532,6 +4971,15 @@ internal sealed partial class OccultPotFeature : IDisposable
                 if (t.GetField(name, bf)    is { } f) return f.GetValue(obj);
                 t = t.BaseType;
             }
+            return null;
+        }
+
+        private static FieldInfo? FindField(Type type, string name, BindingFlags flags)
+        {
+            for (var current = type; current != null; current = current.BaseType)
+                if (current.GetField(name, flags) is { } field)
+                    return field;
+
             return null;
         }
     }

@@ -115,7 +115,6 @@ internal sealed partial class OccultPotFeature
         autoDigTask.Abort();
         autoDigActive = true;
         autoDigStatus = $"宝箱数量满足：青铜 {bronzeChests} / 白银 {silverChests}";
-        SendCommand("/bocchiillegal off");
         NotifyHelper.Instance().NotificationInfo(
             $"宝箱达到上限，开始自动寻宝：白银 {silverChests}、青铜 {bronzeChests}");
         StartCofferHunt();
@@ -139,7 +138,9 @@ internal sealed partial class OccultPotFeature
         autoDigActive                 = true;
         cofferHuntActive              = true;
         cofferHuntTerritory           = GameState.TerritoryType;
+        activeCofferHuntExecutor      = CofferHuntExecutor.DailyRoutines;
         drHuntStarted                 = false;
+        bocchiHuntStarted             = false;
         SelectRandomDrCofferHuntRoute();
         cofferHuntStartedAt           = Environment.TickCount64;
         var routeName                 = drOuterRouteActive ? "外环" : "内环";
@@ -185,10 +186,53 @@ internal sealed partial class OccultPotFeature
 
         cofferHuntActive    = true;
         cofferHuntTerritory = GameState.TerritoryType;
+        activeCofferHuntExecutor = config.CofferHuntExecutor;
         drHuntStarted       = false;
-        SelectRandomDrCofferHuntRoute();
+        bocchiHuntStarted   = false;
         EndBocchiReturnSuppression();
-        StartDrCofferHunt();
+        if (activeCofferHuntExecutor == CofferHuntExecutor.Bocchi)
+            StartBocchiCofferHunt();
+        else
+        {
+            SelectRandomDrCofferHuntRoute();
+            StartDrCofferHunt();
+        }
+    }
+
+    private void StartBocchiCofferHunt()
+    {
+        if (autoDigTask == null) return;
+
+        autoDigStatus = "BOCCHI 宝箱猎人准备启动";
+        autoDigTask.Enqueue(() =>
+        {
+            VnavStop();
+            var bocchiStopMode = EmergencyStopBocchi();
+            DService.Instance().Log.Information(
+                $"[KeitaToolbox.MagicPot] BOCCHI treasure hunt preparation; automator stop={bocchiStopMode}");
+            return true;
+        });
+        autoDigTask.DelayNext(500);
+        autoDigTask.Enqueue(() =>
+        {
+            if (!BocchiAutomator.TryStartTreasureHunter(out var result))
+            {
+                ClearCofferHuntState();
+                BocchiOn();
+                FinishAutoDig();
+                autoDigStatus = "BOCCHI 宝箱猎人未能启动";
+                NotifyHelper.Instance().NotificationWarning($"{autoDigStatus}：{result}");
+                return true;
+            }
+
+            bocchiHuntStarted   = true;
+            cofferHuntStartedAt = Environment.TickCount64;
+            autoDigStatus       = "BOCCHI 宝箱猎人寻宝中";
+            NotifyHelper.Instance().NotificationInfo("BOCCHI 宝箱猎人已启动");
+            DService.Instance().Log.Information(
+                $"[KeitaToolbox.MagicPot] BOCCHI treasure hunter started: {result}");
+            return true;
+        });
     }
 
     private void SelectRandomDrCofferHuntRoute()
@@ -589,51 +633,74 @@ internal sealed partial class OccultPotFeature
 
     private void MaybeCofferHuntDone()
     {
-        if (!cofferHuntActive || !drHuntStarted ||
-            Environment.TickCount64 - cofferHuntStartedAt < 30000)
+        if (!cofferHuntActive)
             return;
 
-        var player = DService.Instance().ObjectTable.LocalPlayer;
-        if (player is null || DService.Instance().Condition[ConditionFlag.BetweenAreas] ||
-            Vector2.Distance(player.Position.ToVector2(), GetCofferHuntBasePosition(cofferHuntTerritory).ToVector2()) > 50f)
-            return;
+        string completedBy;
+        if (activeCofferHuntExecutor == CofferHuntExecutor.Bocchi)
+        {
+            if (!bocchiHuntStarted ||
+                !BocchiAutomator.TryGetTreasureHunterRunning(out var running) ||
+                running)
+                return;
 
-        var completedRoute = drOuterRouteActive ? "outer" : "inner";
+            completedBy = "BOCCHI";
+        }
+        else
+        {
+            if (!drHuntStarted || Environment.TickCount64 - cofferHuntStartedAt < 30000)
+                return;
+
+            var player = DService.Instance().ObjectTable.LocalPlayer;
+            if (player is null || DService.Instance().Condition[ConditionFlag.BetweenAreas] ||
+                Vector2.Distance(player.Position.ToVector2(), GetCofferHuntBasePosition(cofferHuntTerritory).ToVector2()) > 50f)
+                return;
+
+            completedBy = $"DailyRoutines {(drOuterRouteActive ? "outer" : "inner")}";
+        }
+
         var now       = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var remaining = nextSpawnTime - now;
         pendingCofferHuntAutoDigFor = displayPot != null && nextSpawnTime > 0 &&
-                                      remaining <= CofferHuntStopLeadSeconds
+                                      CofferHuntHandoffPolicy.IsMagicPotDue(now, nextSpawnTime)
                                           ? nextSpawnTime
                                           : -1;
 
         DService.Instance().Log.Information(
-            $"[KeitaToolbox.MagicPot] DailyRoutines {completedRoute} treasure route completed");
+            $"[KeitaToolbox.MagicPot] {completedBy} treasure hunt completed");
         ClearCofferHuntState();
         autoDigTask?.Abort();
         VnavStop();
         autoDigStatus = pendingCofferHuntAutoDigFor > 0 ? "寻宝完成，回程后自动挖罐" : "寻宝完成，回程待命";
         NotifyHelper.Instance().NotificationInfo(
             pendingCofferHuntAutoDigFor > 0
-                ? "DR 已挖完宝箱，回程后衔接自动挖罐"
-                : "DR 已挖完宝箱，回程后恢复 BOCCHI 非法模式");
+                ? $"{completedBy} 已挖完宝箱，回程后衔接自动挖罐"
+                : $"{completedBy} 已挖完宝箱，回程后恢复 BOCCHI 非法模式");
         EnqueueReturnStandby();
     }
 
     private void MaybeStopCofferHunt(long nowUnix)
     {
         if (!cofferHuntActive) return;
-        if (nextSpawnTime <= 0 || nextSpawnTime - nowUnix > CofferHuntStopLeadSeconds) return;
+        if (!CofferHuntHandoffPolicy.ShouldInterrupt(
+                config.CofferHuntHandoffMode,
+                nowUnix,
+                nextSpawnTime))
+            return;
 
         pendingCofferHuntAutoDigFor = displayPot != null && nextSpawnTime > 0 ? nextSpawnTime : -1;
         StopCofferHunt();
         autoDigTask?.Abort();
-        autoDigStatus = "寻宝结束，回程";
+        autoDigStatus = "魔法罐不足 5 分钟，终止寻宝并回程";
+        NotifyHelper.Instance().NotificationInfo("魔法罐不足 5 分钟，已终止寻宝并进入挖罐流程");
         EnqueueReturnStandby();
     }
 
     private void StopCofferHunt()
     {
-        SendCommand("/pdr ptreasure abort");
+        if (activeCofferHuntExecutor == CofferHuntExecutor.Bocchi)
+            BocchiAutomator.TryStopTreasureHunter(out _);
+        else
+            SendCommand("/pdr ptreasure abort");
         ClearCofferHuntState();
         VnavStop();
     }
@@ -642,8 +709,10 @@ internal sealed partial class OccultPotFeature
     {
         cofferHuntActive    = false;
         cofferHuntTerritory = 0;
+        activeCofferHuntExecutor = CofferHuntExecutor.DailyRoutines;
         drHuntStarted       = false;
         drOuterRouteActive  = false;
+        bocchiHuntStarted   = false;
     }
 
     private void EnqueueReturnStandby()

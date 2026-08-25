@@ -217,17 +217,97 @@ public sealed class PolicyTests
     }
 
     [TestMethod]
+    public void AutoAcceptRaiseRequiresAnActivePlayerRaiseInsideOccultCrescent()
+    {
+        const string raisePrompt = "要接受Player Name的救助吗？";
+
+        Assert.IsTrue(AutoAcceptRaisePolicy.MatchesPrompt(raisePrompt));
+        Assert.IsFalse(AutoAcceptRaisePolicy.MatchesPrompt("要返回起始点吗？"));
+        Assert.IsTrue(AutoAcceptRaisePolicy.CanAccept(true, true, true, false, raisePrompt));
+        Assert.IsFalse(AutoAcceptRaisePolicy.CanAccept(false, true, true, false, raisePrompt));
+        Assert.IsFalse(AutoAcceptRaisePolicy.CanAccept(true, false, true, false, raisePrompt));
+        Assert.IsFalse(AutoAcceptRaisePolicy.CanAccept(true, true, false, false, raisePrompt));
+        Assert.IsFalse(AutoAcceptRaisePolicy.CanAccept(true, true, true, true, raisePrompt));
+        Assert.IsFalse(AutoAcceptRaisePolicy.CanAccept(true, true, true, false, "要返回起始点吗？"));
+    }
+
+    [TestMethod]
+    public void CurrencyExchangeCatalogMapsCrescentRewardsAndCurrencies()
+    {
+        var northFixative = CurrencyExchangeCatalog.Get(1346, CurrencyExchangeReward.UltimateFixative);
+        var northCoffer = CurrencyExchangeCatalog.Get(1346, CurrencyExchangeReward.OldCoffer);
+        var southCoffer = CurrencyExchangeCatalog.Get(1252, CurrencyExchangeReward.OldCoffer);
+
+        Assert.HasCount(2, northFixative);
+        Assert.AreEqual(new CurrencyExchangeSpec("十二城邦白银币", 51975, 0x1B0614, 1200, "终极固定剂", 51978), northFixative[0]);
+        Assert.AreEqual(new CurrencyExchangeSpec("十二城邦白金币", 51976, 0x1B0615, 1920, "终极固定剂", 51978), northFixative[1]);
+        Assert.AreEqual(new CurrencyExchangeSpec("十二城邦白银币", 51975, 0x1B0614, 40, "辅助道具：古旧的钱箱", 47740), northCoffer[0]);
+        Assert.AreEqual(new CurrencyExchangeSpec("十二城邦白金币", 51976, 0x1B0615, 50, "辅助道具：古旧的钱箱", 47740), northCoffer[1]);
+        Assert.AreEqual(new CurrencyExchangeSpec("十二城邦银币", 45043, 0x1B05B0, 40, "辅助道具：古旧的钱箱", 47740), southCoffer[0]);
+        Assert.AreEqual(new CurrencyExchangeSpec("十二城邦金币", 45044, 0x1B05B2, 50, "辅助道具：古旧的钱箱", 47740), southCoffer[1]);
+        Assert.IsEmpty(CurrencyExchangeCatalog.Get(1252, CurrencyExchangeReward.UltimateFixative));
+    }
+
+    [TestMethod]
+    public void CurrencyExchangeConfirmationRequiresCurrencyAndRewardNames()
+    {
+        const string prompt = "要使用十二城邦白银币兑换古旧的钱箱吗？";
+
+        Assert.IsTrue(CurrencyExchangeConfirmationPolicy.MatchesPrompt(prompt, "十二城邦白银币", "古旧的钱箱"));
+        Assert.IsFalse(CurrencyExchangeConfirmationPolicy.MatchesPrompt(prompt, "十二城邦白金币", "古旧的钱箱"));
+        Assert.IsFalse(CurrencyExchangeConfirmationPolicy.MatchesPrompt(prompt, "十二城邦白银币", "终极固定剂"));
+    }
+
+    [TestMethod]
+    public void CurrencyExchangeLocationRequiresInitialAetheryteProximity()
+    {
+        var aetheryte = new Vector3(100f, 20f, 200f);
+
+        Assert.IsTrue(CurrencyExchangeLocationPolicy.IsNearInitialAetheryte(
+            new Vector3(106f, -50f, 208f),
+            aetheryte));
+        Assert.IsFalse(CurrencyExchangeLocationPolicy.IsNearInitialAetheryte(
+            new Vector3(106.1f, 20f, 208f),
+            aetheryte));
+    }
+
+    [TestMethod]
+    public void CofferHuntHandoffCanInterruptOrFinishTheCurrentHunt()
+    {
+        const long spawnTime = 1_000;
+
+        Assert.IsFalse(CofferHuntHandoffPolicy.IsMagicPotDue(700, spawnTime));
+        Assert.IsTrue(CofferHuntHandoffPolicy.IsMagicPotDue(701, spawnTime));
+        Assert.IsFalse(CofferHuntHandoffPolicy.ShouldInterrupt(
+            CofferHuntHandoffMode.InterruptForMagicPot,
+            700,
+            spawnTime));
+        Assert.IsTrue(CofferHuntHandoffPolicy.ShouldInterrupt(
+            CofferHuntHandoffMode.InterruptForMagicPot,
+            701,
+            spawnTime));
+        Assert.IsFalse(CofferHuntHandoffPolicy.ShouldInterrupt(
+            CofferHuntHandoffMode.FinishCurrentHunt,
+            701,
+            spawnTime));
+        Assert.IsFalse(CofferHuntHandoffPolicy.ShouldInterrupt(
+            CofferHuntHandoffMode.InterruptForMagicPot,
+            701,
+            -1));
+    }
+
+    [TestMethod]
     public void PotFateSupportJobSwitchesBeforeStartAndRequiresParticipationDuringFate()
     {
         const long spawnTime = 1_000;
 
-        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseNinja(998, spawnTime, false, false));
-        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(999, spawnTime, false, false));
-        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(1_000, spawnTime, false, false));
-        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(1_001, spawnTime, false, true));
-        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseNinja(1_031, spawnTime, false, true));
-        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseNinja(2_000, spawnTime, false, false));
-        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseNinja(2_000, spawnTime, true, false));
+        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseSupportJob(998, spawnTime, false, false));
+        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseSupportJob(999, spawnTime, false, false));
+        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseSupportJob(1_000, spawnTime, false, false));
+        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseSupportJob(1_001, spawnTime, false, true));
+        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseSupportJob(1_031, spawnTime, false, true));
+        Assert.IsFalse(PotFateSupportJobPolicy.ShouldUseSupportJob(2_000, spawnTime, false, false));
+        Assert.IsTrue(PotFateSupportJobPolicy.ShouldUseSupportJob(2_000, spawnTime, true, false));
     }
 
     [TestMethod]

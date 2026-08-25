@@ -72,7 +72,7 @@ public sealed partial class Plugin
     {
         var (title, description) = GetPageInfo(selectedSettingsPage);
         ImGui.TextUnformatted(title);
-        ImGui.TextDisabled(description);
+        DrawDisabledWrapped(description);
         ImGui.Separator();
         ImGui.Spacing();
 
@@ -201,11 +201,17 @@ public sealed partial class Plugin
     internal static void DrawHelp(string text)
     {
         ImGui.Indent();
-        ImGui.PushTextWrapPos();
-        ImGui.TextDisabled(text);
-        ImGui.PopTextWrapPos();
+        DrawDisabledWrapped(text);
         ImGui.Unindent();
         ImGui.Spacing();
+    }
+
+    private static void DrawDisabledWrapped(string text)
+    {
+        var wrapPosition = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
+        ImGui.PushTextWrapPos(wrapPosition);
+        ImGui.TextDisabled(text);
+        ImGui.PopTextWrapPos();
     }
 
     private static void DrawFloatingButtonSettings()
