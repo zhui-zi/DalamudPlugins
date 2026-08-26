@@ -209,12 +209,6 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     private const uint LureItemID = 2003296;
 
-    private const int  CurrencyStackCap           = 9999;
-    private const long CurrencyExchangeSessionTimeoutMS = 5_000;
-    private const long CurrencyExchangeConfirmTimeoutMS = 5_000;
-    private const long CurrencyExchangeRetryCooldownMS = 30_000;
-    private const long CurrencyExchangeSpacingMS = 250;
-
     private static readonly string[] DigDirections = ["西北", "西南", "东北", "东南", "正东", "正西", "正南", "正北"];
     private static readonly Regex CofferCountRegex = new(
         @"感知到了\s*(\d+)\s*个银宝箱、\s*(\d+)\s*个铜宝箱",
@@ -518,6 +512,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         DService.Instance().AddonLifecycle.UnregisterListener(OnCurrencyExchangeConfirmAddon);
         DService.Instance().AddonLifecycle.UnregisterListener(OnAutoAcceptRaiseAddon);
         FrameworkManager.Instance().Unreg(OnUpdate);
+        FrameworkManager.Instance().Unreg(OnCurrencyExchangeUpdate);
         FrameworkManager.Instance().Unreg(OnPotFateTarget);
         FrameworkManager.Instance().Unreg(OnAutoDigSafety);
         FrameworkManager.Instance().Unreg(OnAutoRevive);
@@ -1344,6 +1339,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         potFateSupportJobSwitchSuppressed = false;
         StopUndergroundTest(false);
         FrameworkManager.Instance().Unreg(OnUpdate);
+        FrameworkManager.Instance().Unreg(OnCurrencyExchangeUpdate);
         FrameworkManager.Instance().Unreg(OnPotFateTarget);
         FrameworkManager.Instance().Unreg(OnAutoDigSafety);
         FrameworkManager.Instance().Unreg(OnAutoRevive);
@@ -1401,6 +1397,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (!InOccultMapZone && !crossingDC) return;
 
         FrameworkManager.Instance().Reg(OnUpdate, 1_000);
+        FrameworkManager.Instance().Reg(OnCurrencyExchangeUpdate, CurrencyExchangeUpdateIntervalMS);
         FrameworkManager.Instance().Reg(OnPotFateTarget, 100);
         FrameworkManager.Instance().Reg(OnAutoDigSafety, 100);
     }
@@ -1796,32 +1793,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         currencyExchangeStatus = automatic
                                      ? "检测到货币达到 9999，已加入自动兑换队列。"
                                      : $"已加入 {queued} 种货币的全部兑换队列。";
-    }
-
-    private unsafe void OnCurrencyExchangeAddon(AddonEvent _, AddonArgs args)
-    {
-        if (!pendingCurrencyExchange.HasValue || args.Addon == nint.Zero) return;
-        args.Addon.ToStruct()->IsVisible = true;
-    }
-
-    private unsafe void OnCurrencyExchangeDialogAddon(AddonEvent _, AddonArgs args)
-    {
-        if (pendingCurrencyExchange is not { } pending ||
-            pendingCurrencyActionAt != 0 ||
-            pendingCurrencyConfirmationClicked ||
-            args.Addon.IsNull)
-        {
-            return;
-        }
-
-        var addon = args.Addon.ToStruct();
-        if (!addon->IsReady || !addon->IsVisible) return;
-
-        var exchangeButton = addon->GetComponentButtonById(17);
-        if (exchangeButton == null || !exchangeButton->IsEnabled) return;
-
-        exchangeButton->Click();
-        MarkCurrencyExchangeConfirmed(pending, "ShopExchangeCurrencyDialog");
+        BeginCurrencyExchangeBocchiSuppression();
     }
 
     private unsafe void OnCurrencyExchangeConfirmAddon(AddonEvent _, AddonArgs args)
@@ -1873,6 +1845,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (!AddonSelectYesnoEvent.ClickYes())
             return;
 
+        addonBase->IsVisible = false;
         MarkCurrencyExchangeConfirmed(pending, source);
     }
 
@@ -1882,12 +1855,6 @@ internal sealed partial class OccultPotFeature : IDisposable
         currencyExchangeStatus = $"已自动确认{pending.Spec.CurrencyName}兑换，等待库存更新…";
         Plugin.Log.Information(
             $"[KeitaToolbox.MagicPot] Auto-confirmed remote currency exchange addon={addonName}, event={pending.Spec.EventID:X}, currency={pending.Spec.CurrencyItemID}, reward={pending.Spec.RewardItemID}, quantity={pending.Quantity}");
-    }
-
-    private static unsafe void EnsureCurrencyExchangeWindowVisible()
-    {
-        var addon = RaptureAtkUnitManager.Instance()->GetAddonByName("ShopExchangeCurrency");
-        if (addon != null) addon->IsVisible = true;
     }
 
     private static unsafe bool HasActiveSelectYesno()
@@ -1920,22 +1887,14 @@ internal sealed partial class OccultPotFeature : IDisposable
         return false;
     }
 
-    private static unsafe void CloseCurrencyExchangeWindow()
-    {
-        var addon = RaptureAtkUnitManager.Instance()->GetAddonByName("ShopExchangeCurrency");
-        if (addon == null)
-            return;
-
-        addon->IsVisible = false;
-        addon->Close(true);
-    }
-
     private void DriveCurrencyExchange()
     {
         if (!InOccultMapZone)
             return;
 
         var now = Environment.TickCount64;
+        MaintainCurrencyExchangeWindowCleanup(now);
+        KeepCurrencyExchangeBocchiSuppressed(now);
         if (CurrencyExchangeBlockedByAutomation)
         {
             PauseCurrencyExchangeForAutomation();
@@ -1944,7 +1903,7 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         if (pendingCurrencyExchange is { } pending)
         {
-            EnsureCurrencyExchangeWindowVisible();
+            SuppressCurrencyExchangeWindow();
 
             if (pendingCurrencyActionAt > 0)
             {
@@ -1988,7 +1947,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             if (currencyConfirmed || rewardConfirmed)
             {
                 CompleteCurrencyExchangeSession(pending.Spec.EventID);
-                CloseCurrencyExchangeWindow();
+                ScheduleCurrencyExchangeWindowCleanup(now);
                 currencyExchangeRetryAfter.Remove((pending.Spec.CurrencyItemID, pending.Spec.RewardItemID));
                 pendingCurrencyExchange = null;
                 pendingCurrencyBeforeCount = 0;
@@ -2006,6 +1965,8 @@ internal sealed partial class OccultPotFeature : IDisposable
                 NotifyHelper.Instance().Chat(message);
                 Plugin.Log.Information(
                     $"[KeitaToolbox.MagicPot] Confirmed remote currency exchange item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
+                if (currencyExchangeQueue.Count == 0)
+                    EndCurrencyExchangeBocchiSuppression(true);
                 return;
             }
 
@@ -2046,6 +2007,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             try
             {
                 var rewardBeforeCount = GetCurrencyCount(request.Spec.RewardItemID);
+                currencyExchangeWindowCleanupUntil = 0;
                 new EventStartPackt(LocalPlayerState.EntityID, request.Spec.EventID).Send();
 
                 pendingCurrencyExchange = request with { Quantity = quantity };
@@ -2066,15 +2028,21 @@ internal sealed partial class OccultPotFeature : IDisposable
 
             return;
         }
+
+        EndCurrencyExchangeBocchiSuppression(true);
     }
 
     private void PauseCurrencyExchangeForAutomation()
     {
         if (pendingCurrencyExchange is not { } pending)
+        {
+            currencyExchangeQueue.Clear();
+            EndCurrencyExchangeBocchiSuppression(false);
             return;
+        }
 
         CompleteCurrencyExchangeSession(pending.Spec.EventID);
-        CloseCurrencyExchangeWindow();
+        ScheduleCurrencyExchangeWindowCleanup(Environment.TickCount64);
         pendingCurrencyExchange = null;
         pendingCurrencyBeforeCount = 0;
         pendingRewardBeforeCount = 0;
@@ -2084,6 +2052,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         pendingCurrencyPromptLogged = false;
         nextCurrencyExchangeAt = 0;
         currencyExchangeStatus = "魔法罐自动化期间已暂停兑换。";
+        EndCurrencyExchangeBocchiSuppression(false);
         Plugin.Log.Information(
             $"[KeitaToolbox.MagicPot] Paused remote currency exchange during Magic Pot automation item={pending.Spec.CurrencyItemID}, quantity={pending.Quantity}");
     }
@@ -2110,7 +2079,8 @@ internal sealed partial class OccultPotFeature : IDisposable
         pendingCurrencyPromptLogged = false;
         nextCurrencyExchangeAt = now + CurrencyExchangeSpacingMS;
         currencyExchangeStatus = message;
-        CloseCurrencyExchangeWindow();
+        ScheduleCurrencyExchangeWindowCleanup(now);
+        EndCurrencyExchangeBocchiSuppression(true);
         NotifyHelper.Instance().NotificationWarning(message);
 
         if (exception == null)
@@ -2136,6 +2106,7 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     private void ResetCurrencyExchange()
     {
+        EndCurrencyExchangeBocchiSuppression(false);
         currencyExchangeQueue.Clear();
         currencyExchangeRetryAfter.Clear();
         pendingCurrencyExchange = null;
@@ -2146,6 +2117,8 @@ internal sealed partial class OccultPotFeature : IDisposable
         pendingCurrencyConfirmationClicked = false;
         pendingCurrencyPromptLogged = false;
         nextCurrencyExchangeAt = 0;
+        currencyExchangeWindowCleanupUntil = 0;
+        CloseCurrencyExchangeWindows();
         currencyExchangeStatus = string.Empty;
     }
 
@@ -2166,8 +2139,6 @@ internal sealed partial class OccultPotFeature : IDisposable
             DriveAutoDig(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             return;
         }
-
-        DriveCurrencyExchange();
 
         if (pendingArchivistReplyTime > 0 && Environment.TickCount64 >= pendingArchivistReplyTime)
         {
@@ -4734,7 +4705,7 @@ internal sealed partial class OccultPotFeature : IDisposable
     }
 
     // Read BOCCHI state only; BOCCHI remains the sole owner of combat logic.
-    private static class BocchiAutomator
+    private static partial class BocchiAutomator
     {
         public static string? TryEmergencyStop()
         {

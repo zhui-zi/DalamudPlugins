@@ -280,6 +280,16 @@ public sealed class PolicyTests
     }
 
     [TestMethod]
+    public void CurrencyExchangeRestoresOnlyItsOwnBocchiState()
+    {
+        Assert.IsTrue(CurrencyExchangeBocchiPolicy.ShouldResume(true, true, false, false));
+        Assert.IsFalse(CurrencyExchangeBocchiPolicy.ShouldResume(false, true, false, false));
+        Assert.IsFalse(CurrencyExchangeBocchiPolicy.ShouldResume(true, false, false, false));
+        Assert.IsFalse(CurrencyExchangeBocchiPolicy.ShouldResume(true, true, true, false));
+        Assert.IsFalse(CurrencyExchangeBocchiPolicy.ShouldResume(true, true, false, true));
+    }
+
+    [TestMethod]
     public void CofferHuntHandoffCanInterruptOrFinishTheCurrentHunt()
     {
         const long spawnTime = 1_000;

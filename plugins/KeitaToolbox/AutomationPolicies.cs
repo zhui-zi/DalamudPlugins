@@ -145,6 +145,16 @@ internal static class CurrencyExchangeRetryPolicy
         count >= stackCap && now >= retryAfter;
 }
 
+internal static class CurrencyExchangeBocchiPolicy
+{
+    internal static bool ShouldResume(
+        bool wasEnabled,
+        bool inOccultMap,
+        bool automationBlocked,
+        bool returnSuppressed) =>
+        wasEnabled && inOccultMap && !automationBlocked && !returnSuppressed;
+}
+
 internal enum CofferHuntExecutor
 {
     DailyRoutines,
