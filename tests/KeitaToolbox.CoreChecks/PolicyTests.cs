@@ -272,6 +272,14 @@ public sealed class PolicyTests
     }
 
     [TestMethod]
+    public void AutomaticCurrencyExchangeRetriesAtCapAfterCooldown()
+    {
+        Assert.IsFalse(CurrencyExchangeRetryPolicy.ShouldQueueAutomatic(9_998, 9_999, 1_000, 0));
+        Assert.IsFalse(CurrencyExchangeRetryPolicy.ShouldQueueAutomatic(9_999, 9_999, 999, 1_000));
+        Assert.IsTrue(CurrencyExchangeRetryPolicy.ShouldQueueAutomatic(9_999, 9_999, 1_000, 1_000));
+    }
+
+    [TestMethod]
     public void CofferHuntHandoffCanInterruptOrFinishTheCurrentHunt()
     {
         const long spawnTime = 1_000;

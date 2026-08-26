@@ -1768,12 +1768,18 @@ internal sealed partial class OccultPotFeature : IDisposable
         foreach (var exchange in CurrencyExchangeCatalog.Get(GameState.TerritoryType, config.CurrencyExchangeReward))
         {
             var count = GetCurrencyCount(exchange.CurrencyItemID);
-            if (count < exchange.Cost || automatic && count < CurrencyStackCap)
-                continue;
-
-            if (automatic &&
-                currencyExchangeRetryAfter.TryGetValue((exchange.CurrencyItemID, exchange.RewardItemID), out var retryAfter) &&
-                now < retryAfter)
+            var retryAfter = automatic &&
+                             currencyExchangeRetryAfter.TryGetValue(
+                                 (exchange.CurrencyItemID, exchange.RewardItemID),
+                                 out var blockedUntil)
+                                 ? blockedUntil
+                                 : 0;
+            if (count < exchange.Cost ||
+                automatic && !CurrencyExchangeRetryPolicy.ShouldQueueAutomatic(
+                    count,
+                    CurrencyStackCap,
+                    now,
+                    retryAfter))
                 continue;
 
             currencyExchangeQueue.Enqueue(new(exchange, automatic, 0));
@@ -2092,9 +2098,7 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (request.Automatic)
         {
             currencyExchangeQueue.Clear();
-            config.EnableAutoCurrencyExchange = false;
-            config.Save(this);
-            message += " 自动兑换已关闭，请确认后重新开启。";
+            message += " 本轮兑换已停止，将在再次满足条件时重试。";
         }
 
         pendingCurrencyExchange = null;

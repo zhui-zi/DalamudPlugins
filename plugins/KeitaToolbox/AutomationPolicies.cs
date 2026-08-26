@@ -139,6 +139,12 @@ internal static class CurrencyExchangeLocationPolicy
     }
 }
 
+internal static class CurrencyExchangeRetryPolicy
+{
+    internal static bool ShouldQueueAutomatic(int count, int stackCap, long now, long retryAfter) =>
+        count >= stackCap && now >= retryAfter;
+}
+
 internal enum CofferHuntExecutor
 {
     DailyRoutines,
