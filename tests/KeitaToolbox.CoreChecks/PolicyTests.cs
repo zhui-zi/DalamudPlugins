@@ -280,6 +280,34 @@ public sealed class PolicyTests
     }
 
     [TestMethod]
+    public void MagicPotStandbyRadiusExpandsWithoutCrossingTheFateBoundary()
+    {
+        var target = new Vector3(204.66835f, 111.81729f, -204.96242f);
+        var center = new Vector3(200f, 111.7266f, -215f);
+
+        var radius = MagicPotStandbyPolicy.GetOffsetRadius(target, center, 40f);
+
+        Assert.AreEqual(15f, radius);
+        var centerOffset = Vector2.Distance(
+            new Vector2(target.X, target.Z),
+            new Vector2(center.X, center.Z));
+        Assert.IsLessThanOrEqualTo(
+            40f,
+            centerOffset + radius + MagicPotStandbyPolicy.ArrivalTolerance);
+    }
+
+    [TestMethod]
+    public void MagicPotStandbyRadiusShrinksForATighterFateBoundary()
+    {
+        var radius = MagicPotStandbyPolicy.GetOffsetRadius(
+            new Vector3(4f, 0f, 0f),
+            Vector3.Zero,
+            20f);
+
+        Assert.AreEqual(12f, radius);
+    }
+
+    [TestMethod]
     public void CurrencyExchangeRestoresOnlyItsOwnBocchiState()
     {
         Assert.IsTrue(CurrencyExchangeBocchiPolicy.ShouldResume(true, true, false, false));

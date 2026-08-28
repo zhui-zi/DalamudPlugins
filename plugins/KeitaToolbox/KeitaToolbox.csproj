@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.CN.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>1.7.2.2</Version>
+    <Version>1.7.2.3</Version>
     <AssemblyName>KeitaToolbox</AssemblyName>
     <RootNamespace>KeitaToolbox</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

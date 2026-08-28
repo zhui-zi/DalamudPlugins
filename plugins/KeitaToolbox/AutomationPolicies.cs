@@ -145,6 +145,24 @@ internal static class CurrencyExchangeRetryPolicy
         count >= stackCap && now >= retryAfter;
 }
 
+internal static class MagicPotStandbyPolicy
+{
+    internal const float DesiredOffsetRadius = 15f;
+    internal const float ArrivalTolerance = 4f;
+
+    internal static float GetOffsetRadius(
+        Vector3 targetPosition,
+        Vector3 fateCenter,
+        float fateRadius)
+    {
+        var deltaX = targetPosition.X - fateCenter.X;
+        var deltaZ = targetPosition.Z - fateCenter.Z;
+        var centerOffset = MathF.Sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
+        var boundaryLimitedRadius = Math.Max(0f, fateRadius - centerOffset - ArrivalTolerance);
+        return Math.Min(DesiredOffsetRadius, boundaryLimitedRadius);
+    }
+}
+
 internal static class CurrencyExchangeBocchiPolicy
 {
     internal static bool ShouldResume(

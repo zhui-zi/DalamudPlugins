@@ -232,10 +232,10 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     private readonly Pot[] pots =
     [
-        new() { TerritoryID = 1252, FateID = 1976, World = new(204.66835f,  111.81729f, -204.96242f), DirName = "北", Aetheryte = "古树湿原", AetherytePos = new(302.4757f,   102.99427f, 305.8504f) },
-        new() { TerritoryID = 1252, FateID = 1977, World = new(-479.8395f,  75f,         524.78894f), DirName = "南", Aetheryte = "石塔水沼", AetherytePos = new(-384.55502f, 97.29398f,  277.75458f) },
-        new() { TerritoryID = 1346, FateID = 2072, World = new(233f,         7.729229f,  -470f),      DirName = "北", AetheryteData = CrescentAetheryte.SinkingSanctuary,  AetherytePlaceNameID = CrescentAetheryte.SinkingSanctuary.DataID,  AetherytePos = CrescentAetheryte.SinkingSanctuary.Position },
-        new() { TerritoryID = 1346, FateID = 2073, World = new(-505.2822f,  53.14409f,   244.041f),  DirName = "南", AetheryteData = CrescentAetheryte.SuspendedMasonry, AetherytePlaceNameID = CrescentAetheryte.SuspendedMasonry.DataID, AetherytePos = CrescentAetheryte.SuspendedMasonry.Position }
+        new() { TerritoryID = 1252, FateID = 1976, World = new(204.66835f,  111.81729f, -204.96242f), FateCenter = new(200f,       111.7266f,  -215f),     FateRadius = 40f, DirName = "北", Aetheryte = "古树湿原", AetherytePos = new(302.4757f,   102.99427f, 305.8504f) },
+        new() { TerritoryID = 1252, FateID = 1977, World = new(-479.8395f,  75f,         524.78894f), FateCenter = new(-481f,      75f,         528f),      FateRadius = 40f, DirName = "南", Aetheryte = "石塔水沼", AetherytePos = new(-384.55502f, 97.29398f,  277.75458f) },
+        new() { TerritoryID = 1346, FateID = 2072, World = new(233f,         7.729229f,  -470f),      FateCenter = new(233f,       7.729229f,  -470f),     FateRadius = 40f, DirName = "北", AetheryteData = CrescentAetheryte.SinkingSanctuary,  AetherytePlaceNameID = CrescentAetheryte.SinkingSanctuary.DataID,  AetherytePos = CrescentAetheryte.SinkingSanctuary.Position },
+        new() { TerritoryID = 1346, FateID = 2073, World = new(-505.2822f,  53.14409f,   244.041f),  FateCenter = new(-505.2822f, 53.14409f,   244.041f), FateRadius = 38f, DirName = "南", AetheryteData = CrescentAetheryte.SuspendedMasonry, AetherytePlaceNameID = CrescentAetheryte.SuspendedMasonry.DataID, AetherytePos = CrescentAetheryte.SuspendedMasonry.Position }
     ];
 
     private static readonly (string Command, string Label)[] ChatChannels =
@@ -3972,6 +3972,8 @@ internal sealed partial class OccultPotFeature : IDisposable
         public uint    TerritoryID;
         public ushort  FateID;
         public Vector3 World;
+        public Vector3 FateCenter;
+        public float   FateRadius;
         public string  DirName = string.Empty;
 
         public string  Aetheryte = string.Empty;

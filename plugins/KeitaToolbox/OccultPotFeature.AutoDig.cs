@@ -519,9 +519,13 @@ internal sealed partial class OccultPotFeature
         autoDigTask.Enqueue(WaitOutOfCombat(10000));
         autoDigTask.Enqueue(PlayerReady);
         EnqueuePtp(target);
+        var standbyRadius = MagicPotStandbyPolicy.GetOffsetRadius(
+            target.World,
+            target.FateCenter,
+            target.FateRadius);
         EnqueueMoveTo(
-            RandomOffset(target.World, 6f),
-            4f,
+            RandomOffset(target.World, standbyRadius),
+            MagicPotStandbyPolicy.ArrivalTolerance,
             timeoutMs: target.TerritoryID == OccultNorthTerritory ? 240000 : 90000);
         autoDigTask.Enqueue(() => { autoDigStatus = "等待刷新"; return target.Alive; });
         autoDigTask.Enqueue(() => { Dismount(); ClearCurrentTarget(); return true; });
