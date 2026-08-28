@@ -34,7 +34,7 @@ try
     & dotnet test `
         --project 'tests\KeitaToolbox.CoreChecks\KeitaToolbox.CoreChecks.csproj' `
         --configuration Release `
-        --minimum-expected-tests 6
+        --minimum-expected-tests 31
     Assert-LastExitCode 'Core tests'
 
     $architectureLimits = @{
@@ -42,6 +42,8 @@ try
         'plugins\KeitaToolbox\OccultPotFeature.cs' = 5000
         'plugins\KeitaToolbox\OccultPotFeature.AutoDig.cs' = 3500
         'plugins\KeitaToolbox\OccultPotFeature.CofferHunt.cs' = 1000
+        'plugins\KeitaToolbox\OccultPotFeature.TrackerModels.cs' = 200
+        'plugins\KeitaToolbox\AsyncOperationGate.cs' = 100
     }
     foreach ($entry in $architectureLimits.GetEnumerator())
     {
@@ -56,15 +58,21 @@ try
     {
         & npm.cmd ci --prefix 'workers\dalamud-unlock'
         Assert-LastExitCode 'Unlock Worker install'
+
+        & npm.cmd ci --prefix 'workers\keita-toolbox-stats'
+        Assert-LastExitCode 'Stats Worker install'
     }
 
     & npm.cmd run check --prefix 'workers\dalamud-unlock'
     Assert-LastExitCode 'Unlock Worker checks'
 
+    & npm.cmd run check --prefix 'workers\keita-toolbox-stats'
+    Assert-LastExitCode 'Stats Worker checks'
+
     & git diff --check
     Assert-LastExitCode 'Git diff check'
 
-    Write-Host 'All non-telemetry verification checks passed.'
+    Write-Host 'All verification checks passed.'
 }
 finally
 {

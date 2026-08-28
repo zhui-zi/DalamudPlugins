@@ -82,6 +82,7 @@ public sealed partial class Plugin : IDalamudPlugin
     private string unlockError = string.Empty;
     private long completedUsageTimestamp;
     private bool windowOpen;
+    private int disposeState;
 
     public Plugin()
     {
@@ -151,43 +152,56 @@ public sealed partial class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        CommandManager.RemoveHandler(ShortCommand);
-        CommandManager.RemoveHandler(Command);
-        PluginInterface.UiBuilder.OpenMainUi -= OpenWindow;
-        PluginInterface.UiBuilder.OpenConfigUi -= OpenWindow;
-        PluginInterface.UiBuilder.Draw -= DrawFloatingButton;
-        PluginInterface.UiBuilder.Draw -= DrawWindow;
-        Framework.Update -= OnFrameworkUpdate;
+        if (Interlocked.Exchange(ref disposeState, 1) != 0)
+            return;
 
-        verificationMonitorFeature?.Dispose();
-        aeAssistStartupFeature?.Dispose();
-        voidAetherFeature?.Dispose();
-        occultPotFeature?.Dispose();
-        mapGearsetFeature?.Dispose();
-        advancedToolsFeature?.Dispose();
-        portraitFeature?.Dispose();
-        autoRefuseTradeFeature?.Dispose();
-        autoLeaveFeature?.Dispose();
-        autoInviteFeature?.Dispose();
-        basicFeatures?.Dispose();
-        usageCancellation.Cancel();
-        usageClient.Dispose();
-        usageCancellation.Dispose();
-        unlockClient.Dispose();
-        Scheduler.Clear();
+        TryCleanup("short command", () => CommandManager.RemoveHandler(ShortCommand));
+        TryCleanup("main command", () => CommandManager.RemoveHandler(Command));
+        TryCleanup("main UI event", () => PluginInterface.UiBuilder.OpenMainUi -= OpenWindow);
+        TryCleanup("config UI event", () => PluginInterface.UiBuilder.OpenConfigUi -= OpenWindow);
+        TryCleanup("floating button draw event", () => PluginInterface.UiBuilder.Draw -= DrawFloatingButton);
+        TryCleanup("settings draw event", () => PluginInterface.UiBuilder.Draw -= DrawWindow);
+        TryCleanup("framework update event", () => Framework.Update -= OnFrameworkUpdate);
+
+        DisposeFeature(verificationMonitorFeature, "plugin verification monitor");
+        DisposeFeature(aeAssistStartupFeature, "AEAssist startup automation");
+        DisposeFeature(voidAetherFeature, "void aether tools");
+        DisposeFeature(occultPotFeature, "Magic Pot Assistant");
+        DisposeFeature(mapGearsetFeature, "automatic map gearset switch");
+        DisposeFeature(advancedToolsFeature, "advanced tools");
+        DisposeFeature(portraitFeature, "portrait gear synchronization");
+        DisposeFeature(autoRefuseTradeFeature, "automatic trade refusal");
+        DisposeFeature(autoLeaveFeature, "automatic duty leave");
+        DisposeFeature(autoInviteFeature, "automatic party invite");
+        DisposeFeature(basicFeatures, "general tools");
+
+        TryCleanup("usage task cancellation", usageCancellation.Cancel);
+        TryCleanup("usage HTTP client", usageClient.Dispose);
+        TryCleanup("usage cancellation source", usageCancellation.Dispose);
+        TryCleanup("unlock HTTP client", unlockClient.Dispose);
+        TryCleanup("deferred scheduler", Scheduler.Clear);
         if (omenServicesInitialized)
-        {
-            try
-            {
-                DService.Uninit();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Failed to dispose the Magic Pot Assistant runtime.");
-            }
-        }
+            TryCleanup("Magic Pot Assistant runtime", DService.Uninit);
 
         Log.Information("Keita Toolbox disabled.");
+    }
+
+    private static void DisposeFeature(IDisposable? feature, string name)
+    {
+        if (feature != null)
+            TryCleanup(name, feature.Dispose);
+    }
+
+    private static void TryCleanup(string name, Action cleanup)
+    {
+        try
+        {
+            cleanup();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to dispose toolbox resource: {Resource}.", name);
+        }
     }
 
     private void OnFrameworkUpdate(IFramework _)

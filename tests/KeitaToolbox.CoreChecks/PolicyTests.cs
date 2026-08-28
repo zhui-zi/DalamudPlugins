@@ -30,13 +30,56 @@ public sealed class PolicyTests
     }
 
     [TestMethod]
-    public void IslandReentryRequiresLowTimeAndDisabledCrossDataCenterTravel()
+    public void AutoDigRunModeSelectsOnlyItsConfiguredIslandTransfer()
     {
-        Assert.IsTrue(CrossDCRoutingPolicy.ShouldReenterIsland(true, false, 5_399));
-        Assert.IsFalse(CrossDCRoutingPolicy.ShouldReenterIsland(true, false, 5_400));
-        Assert.IsFalse(CrossDCRoutingPolicy.ShouldReenterIsland(true, true, 5_399));
-        Assert.IsFalse(CrossDCRoutingPolicy.ShouldReenterIsland(false, false, 5_399));
-        Assert.IsFalse(CrossDCRoutingPolicy.ShouldReenterIsland(true, false, null));
+        Assert.AreEqual(
+            AutoDigRunModePolicy.SouthTerritory,
+            AutoDigRunModePolicy.SelectIslandDestination(
+                AutoDigRunMode.ReenterCurrentIslandWhenTimeLow,
+                AutoDigRunModePolicy.SouthTerritory,
+                5_399));
+        Assert.IsNull(AutoDigRunModePolicy.SelectIslandDestination(
+            AutoDigRunMode.ReenterCurrentIslandWhenTimeLow,
+            AutoDigRunModePolicy.SouthTerritory,
+            5_400));
+        Assert.AreEqual(
+            AutoDigRunModePolicy.NorthTerritory,
+            AutoDigRunModePolicy.SelectIslandDestination(
+                AutoDigRunMode.AlternateIslands,
+                AutoDigRunModePolicy.SouthTerritory,
+                null));
+        Assert.AreEqual(
+            AutoDigRunModePolicy.SouthTerritory,
+            AutoDigRunModePolicy.SelectIslandDestination(
+                AutoDigRunMode.AlternateIslands,
+                AutoDigRunModePolicy.NorthTerritory,
+                null));
+        Assert.IsNull(AutoDigRunModePolicy.SelectIslandDestination(
+            AutoDigRunMode.CrossDataCenter,
+            AutoDigRunModePolicy.SouthTerritory,
+            5_399));
+        Assert.IsNull(AutoDigRunModePolicy.SelectIslandDestination(
+            AutoDigRunMode.ReturnToBase,
+            AutoDigRunModePolicy.NorthTerritory,
+            5_399));
+        Assert.IsNull(AutoDigRunModePolicy.SelectIslandDestination(
+            AutoDigRunMode.AlternateIslands,
+            129,
+            5_399));
+    }
+
+    [TestMethod]
+    public void AutoDigRunModeMigratesLegacySettingsWithoutAmbiguity()
+    {
+        Assert.AreEqual(
+            AutoDigRunMode.CrossDataCenter,
+            AutoDigRunModePolicy.ResolveLegacyMode(AutoDigRunMode.ReturnToBase, true, true));
+        Assert.AreEqual(
+            AutoDigRunMode.ReenterCurrentIslandWhenTimeLow,
+            AutoDigRunModePolicy.ResolveLegacyMode(AutoDigRunMode.ReturnToBase, false, true));
+        Assert.AreEqual(
+            AutoDigRunMode.AlternateIslands,
+            AutoDigRunModePolicy.ResolveLegacyMode(AutoDigRunMode.AlternateIslands, null, null));
     }
 
     [TestMethod]
@@ -232,6 +275,43 @@ public sealed class PolicyTests
     }
 
     [TestMethod]
+    public void OccultAutoDiscardBuildsCommandOnlyForConfiguredCrescentEntry()
+    {
+        Assert.AreEqual("/pdrdiscard 垃圾", OccultAutoDiscardPolicy.BuildCommand(true, 1252, " 垃圾 "));
+        Assert.AreEqual("/pdrdiscard G18辣鸡", OccultAutoDiscardPolicy.BuildCommand(true, 1346, "G18辣鸡"));
+        Assert.IsNull(OccultAutoDiscardPolicy.BuildCommand(false, 1252, "垃圾"));
+        Assert.IsNull(OccultAutoDiscardPolicy.BuildCommand(true, 129, "垃圾"));
+        Assert.IsNull(OccultAutoDiscardPolicy.BuildCommand(true, 1252, "  "));
+        Assert.IsNull(OccultAutoDiscardPolicy.BuildCommand(true, 1252, "垃圾\n/echo unexpected"));
+    }
+
+    [TestMethod]
+    public void OccultAutoDiscardWaitsForAStableReadyWindow()
+    {
+        const string observedFailure = "当前状态下无法进行该操作。";
+
+        Assert.IsFalse(
+            OccultAutoDiscardPolicy.HasStableReadyState(true, true, true, 1_999),
+            observedFailure);
+        Assert.IsTrue(OccultAutoDiscardPolicy.HasStableReadyState(true, true, true, 2_000));
+        Assert.IsFalse(OccultAutoDiscardPolicy.HasStableReadyState(true, true, false, 2_000));
+    }
+
+    [TestMethod]
+    public void OccultAutoBocchiDispatchesOnlyAfterConfiguredCrescentEntryIsReady()
+    {
+        Assert.IsTrue(OccultAutoBocchiPolicy.ShouldSchedule(true, 1252));
+        Assert.IsTrue(OccultAutoBocchiPolicy.ShouldSchedule(true, 1346));
+        Assert.IsFalse(OccultAutoBocchiPolicy.ShouldSchedule(false, 1252));
+        Assert.IsFalse(OccultAutoBocchiPolicy.ShouldSchedule(true, 129));
+
+        Assert.AreEqual("/bocchiillegal on", OccultAutoBocchiPolicy.BuildCommand(true, 1252, true, true, false));
+        Assert.IsNull(OccultAutoBocchiPolicy.BuildCommand(true, 1252, false, true, false));
+        Assert.IsNull(OccultAutoBocchiPolicy.BuildCommand(true, 1252, true, false, false));
+        Assert.IsNull(OccultAutoBocchiPolicy.BuildCommand(true, 1252, true, true, true));
+    }
+
+    [TestMethod]
     public void CurrencyExchangeCatalogMapsCrescentRewardsAndCurrencies()
     {
         var northFixative = CurrencyExchangeCatalog.Get(1346, CurrencyExchangeReward.UltimateFixative);
@@ -418,6 +498,94 @@ public sealed class PolicyTests
         scheduler.Schedule("clearer", 0, scheduler.Clear);
         scheduler.Update();
         Assert.IsFalse(clearedActionExecuted);
+    }
+
+    [TestMethod]
+    public void AsyncOperationGateRejectsInvalidatedAndReplacedLeases()
+    {
+        var gate = new AsyncOperationGate();
+        var initial = gate.Capture();
+        var applied = 0;
+
+        Assert.IsTrue(gate.TryApply(initial, () => applied++));
+        gate.Invalidate();
+        Assert.IsTrue(initial.Token.IsCancellationRequested);
+        Assert.IsFalse(gate.TryApply(initial, () => applied++));
+
+        var replacement = gate.Capture();
+        Assert.IsTrue(gate.TryApply(replacement, () => applied++));
+        var next = gate.Begin();
+        Assert.IsTrue(replacement.Token.IsCancellationRequested);
+        Assert.IsFalse(gate.TryApply(replacement, () => applied++));
+        Assert.IsTrue(gate.TryApply(next, () => applied++));
+
+        gate.Dispose();
+        Assert.IsTrue(next.Token.IsCancellationRequested);
+        Assert.IsFalse(gate.TryApply(next, () => applied++));
+        Assert.AreEqual(3, applied);
+    }
+
+    [TestMethod]
+    public void ConfigurationMigrationRepairsNullLegacyValues()
+    {
+        var configuration = new Configuration
+        {
+            Features = null!,
+            Interface = null!,
+            Bmrai = null!,
+            AutoInvite = null!,
+            Trade = null!,
+            PartyFinder = null!,
+            Portrait = null!,
+            Advanced = null!,
+            CombatUtilities = null!,
+            OccultPot = null!,
+            AeAssistStartup = null!,
+            AnonymousInstallId = null!,
+            OccultPotAssistantConfig = null!,
+            Duty = new DutySettings
+            {
+                CommenceWhitelist = null!,
+                LeaveWhitelist = null!,
+                ImmediateLeaveWhitelist = null!,
+            },
+            PluginSwitcher = new PluginSwitcherSettings
+            {
+                DisableInPvp = null!,
+                EnableInPvp = null!,
+                MapRules =
+                [
+                    null!,
+                    new MapRule { Territories = null!, Disable = null!, Enable = null! },
+                ],
+            },
+            MapGearset = new MapGearsetSettings
+            {
+                Rules =
+                [
+                    null!,
+                    new MapGearsetRule { TerritoryIds = null!, TerritoryId = 1252 },
+                ],
+            },
+            VerificationMonitor = new VerificationMonitorSettings
+            {
+                LastNotifiedExpiryUnixSeconds = null!,
+                LastKnownExpiryUnixSeconds = null!,
+            },
+        };
+
+        Assert.IsTrue(configuration.Migrate());
+        Assert.IsNotNull(configuration.Features);
+        Assert.IsNotNull(configuration.Interface);
+        Assert.IsNotNull(configuration.Duty.CommenceWhitelist);
+        Assert.IsNotNull(configuration.AutoInvite.ListenChannels);
+        Assert.HasCount(1, configuration.PluginSwitcher.MapRules);
+        Assert.AreEqual(string.Empty, configuration.PluginSwitcher.MapRules[0].Territories);
+        Assert.HasCount(1, configuration.MapGearset.Rules);
+        Assert.IsTrue(configuration.MapGearset.Rules[0].TerritoryIds.Contains(1252));
+        Assert.AreEqual(0u, configuration.MapGearset.Rules[0].TerritoryId);
+        Assert.IsNotNull(configuration.VerificationMonitor.LastKnownExpiryUnixSeconds);
+        Assert.IsTrue(Guid.TryParseExact(configuration.AnonymousInstallId, "N", out _));
     }
 
     [TestMethod]

@@ -655,37 +655,121 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
             Plugin.Config.Features.PortraitGearSync,
             value => Plugin.Config.Features.PortraitGearSync = value);
 
+        DrawSyncPreset();
+
+        if (!ImGui.TreeNode("高级同步规则"))
+            return;
+
+        ImGui.TextDisabled("装备套装更新");
         DrawOption(
-            "装备套装更新后重新应用关联的投影模板",
+            "重新应用关联的投影模板",
             Plugin.Config.Portrait.ReequipLinkedGlamourPlate,
             value => Plugin.Config.Portrait.ReequipLinkedGlamourPlate = value);
         DrawOption(
-            "装备套装更新后同步当前即时肖像",
+            "更新当前即时肖像",
             Plugin.Config.Portrait.UpdatePortraitOnGearsetUpdate,
             value => Plugin.Config.Portrait.UpdatePortraitOnGearsetUpdate = value);
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("其他装备变更");
         DrawOption(
-            "同步头部装备显示和面罩状态",
+            "同步头部显示与面罩状态",
             Plugin.Config.Portrait.SyncHeadgearChanges,
             value => Plugin.Config.Portrait.SyncHeadgearChanges = value);
         DrawOption(
-            "同步最强装备变更",
+            "同步最强装备",
             Plugin.Config.Portrait.SyncRecommendedGear,
             value => Plugin.Config.Portrait.SyncRecommendedGear = value);
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("应用投影模板后");
         DrawOption(
-            "应用投影模板后同步当前装备套装与肖像",
+            "更新当前套装与即时肖像",
             Plugin.Config.Portrait.SyncAfterGlamourPlate,
             value => Plugin.Config.Portrait.SyncAfterGlamourPlate = value);
         DrawOption(
-            "更新所有共用相同实际装备的套装",
+            "更新共用实际装备的其他套装",
             Plugin.Config.Portrait.SyncSharedGearsetsAfterGlamourPlate,
             value => Plugin.Config.Portrait.SyncSharedGearsetsAfterGlamourPlate = value);
         DrawOption(
-            "自动更新所有装备套装保存的肖像",
+            "更新所有套装保存的肖像",
             Plugin.Config.Portrait.UpdateSharedPortraitsAfterGlamourPlate,
             value => Plugin.Config.Portrait.UpdateSharedPortraitsAfterGlamourPlate = value);
 
         Plugin.DrawHelp(
             "当前套装会正常发送即时肖像更新；其他套装会直接刷新保存的肖像装备数据，无需切换职业或逐一装备。");
+        ImGui.TreePop();
+    }
+
+    private static void DrawSyncPreset()
+    {
+        var preset = GetSyncPreset();
+        var preview = preset switch
+        {
+            PortraitSyncPreset.Full => "全面同步",
+            PortraitSyncPreset.CurrentGearset => "仅同步当前套装",
+            _ => "自定义",
+        };
+
+        if (ImGui.BeginCombo("同步方案", preview))
+        {
+            if (ImGui.Selectable("全面同步", preset == PortraitSyncPreset.Full))
+                ApplySyncPreset(PortraitSyncPreset.Full);
+            if (ImGui.Selectable(
+                    "仅同步当前套装",
+                    preset == PortraitSyncPreset.CurrentGearset))
+            {
+                ApplySyncPreset(PortraitSyncPreset.CurrentGearset);
+            }
+
+            ImGui.EndCombo();
+        }
+
+        Plugin.DrawHelp(preset switch
+        {
+            PortraitSyncPreset.Full =>
+                "自动处理全部相关变更，并同步共用实际装备的其他套装与保存的肖像。",
+            PortraitSyncPreset.CurrentGearset =>
+                "自动处理全部相关变更，仅更新当前装备套装与即时肖像。",
+            _ => "当前使用高级同步规则中的自定义设置。",
+        });
+    }
+
+    private static PortraitSyncPreset GetSyncPreset()
+    {
+        var settings = Plugin.Config.Portrait;
+        var currentGearsetEnabled =
+            settings.ReequipLinkedGlamourPlate &&
+            settings.UpdatePortraitOnGearsetUpdate &&
+            settings.SyncHeadgearChanges &&
+            settings.SyncRecommendedGear &&
+            settings.SyncAfterGlamourPlate;
+        if (!currentGearsetEnabled)
+            return PortraitSyncPreset.Custom;
+
+        if (settings.SyncSharedGearsetsAfterGlamourPlate &&
+            settings.UpdateSharedPortraitsAfterGlamourPlate)
+        {
+            return PortraitSyncPreset.Full;
+        }
+
+        return !settings.SyncSharedGearsetsAfterGlamourPlate &&
+               !settings.UpdateSharedPortraitsAfterGlamourPlate
+            ? PortraitSyncPreset.CurrentGearset
+            : PortraitSyncPreset.Custom;
+    }
+
+    private static void ApplySyncPreset(PortraitSyncPreset preset)
+    {
+        var settings = Plugin.Config.Portrait;
+        settings.ReequipLinkedGlamourPlate = true;
+        settings.UpdatePortraitOnGearsetUpdate = true;
+        settings.SyncHeadgearChanges = true;
+        settings.SyncRecommendedGear = true;
+        settings.SyncAfterGlamourPlate = true;
+        settings.SyncSharedGearsetsAfterGlamourPlate = preset == PortraitSyncPreset.Full;
+        settings.UpdateSharedPortraitsAfterGlamourPlate = preset == PortraitSyncPreset.Full;
+        Plugin.Config.Save();
     }
 
     private static void DrawOption(string label, bool value, Action<bool> setter)
@@ -702,4 +786,11 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
         int GearsetId,
         int TargetSlot,
         int SourceSlot);
+
+    private enum PortraitSyncPreset
+    {
+        Full,
+        CurrentGearset,
+        Custom,
+    }
 }

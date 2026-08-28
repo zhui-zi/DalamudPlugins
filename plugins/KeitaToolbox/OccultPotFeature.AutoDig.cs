@@ -59,6 +59,12 @@ internal sealed partial class OccultPotFeature
 {
     #region Automatic Magic Pot routing
 
+    private void SetAutoDigRunMode(AutoDigRunMode mode)
+    {
+        config.AutoDigRunMode = mode;
+        config.Save(this);
+    }
+
 
 
     private void HandlePotFateEnded(Pot target)
@@ -566,7 +572,12 @@ internal sealed partial class OccultPotFeature
         {
             if (!HasLure())
             {
-                autoDigStatus = config.EnableAutoCrossDC ? "未获得撒娇罐，准备跨区" : "未获得撒娇罐，结束本轮";
+                autoDigStatus = config.AutoDigRunMode switch
+                {
+                    AutoDigRunMode.CrossDataCenter  => "未获得撒娇罐，准备跨区",
+                    AutoDigRunMode.AlternateIslands => "未获得撒娇罐，准备切换南北岛",
+                    _                               => "未获得撒娇罐，结束本轮"
+                };
                 EnqueueFinish();
                 return true;
             }
@@ -980,18 +991,18 @@ internal sealed partial class OccultPotFeature
         var targetTerritory = autoDigTarget?.TerritoryID ?? GameState.TerritoryType;
         autoDigTask.Enqueue(() => { EndUndergroundDangerMode(); return true; });
 
-        if (config.EnableAutoCrossDC)
+        if (config.AutoDigRunMode == AutoDigRunMode.CrossDataCenter)
         {
             autoDigTask.Enqueue(() => { autoDigStatus = "查询跨区"; StartCrossDCQuery(targetTerritory); return true; });
             autoDigTask.Enqueue(WaitCrossDCQuery(15000));
             autoDigTask.Enqueue(EnqueueCrossDCOrStay);
         }
-        else if (CrossDCRoutingPolicy.ShouldReenterIsland(
-                     config.ReenterIslandWhenTimeLow,
-                     config.EnableAutoCrossDC,
-                     GetIslandTimeLeftSeconds()))
+        else if (AutoDigRunModePolicy.SelectIslandDestination(
+                     config.AutoDigRunMode,
+                     targetTerritory,
+                     GetIslandTimeLeftSeconds()) is { } destinationTerritory)
         {
-            autoDigTask.Enqueue(() => EnqueueIslandReentry(targetTerritory));
+            autoDigTask.Enqueue(() => EnqueueIslandTransfer(targetTerritory, destinationTerritory));
         }
         else
         {
@@ -1003,21 +1014,25 @@ internal sealed partial class OccultPotFeature
         }
     }
 
-    private bool EnqueueIslandReentry(uint territory)
+    private bool EnqueueIslandTransfer(uint sourceTerritory, uint destinationTerritory)
     {
         if (autoDigTask == null) return true;
 
-        var entryCommand = territory == OccultNorthTerritory ? "/pdrfe ocn" : "/pdrfe ocs";
+        var alternating = sourceTerritory != destinationTerritory;
+        var destinationName = destinationTerritory == OccultNorthTerritory ? "北征" : "南征";
+        var entryCommand = destinationTerritory == OccultNorthTerritory ? "/pdrfe ocn" : "/pdrfe ocs";
         crossingDC    = true;
         autoDigStatus = "换岛：退出新月岛";
-        NotifyHelper.Instance().NotificationInfo("岛内剩余不足 90 分钟，准备自动换岛");
+        NotifyHelper.Instance().NotificationInfo(alternating
+            ? $"本轮挖罐完成，准备切换至{destinationName}"
+            : "岛内剩余不足 90 分钟，准备自动换岛");
 
         autoDigTask.Enqueue(() => SendCommand("/pdr leaveduty"));
-        autoDigTask.Enqueue(WaitZone(territory, false, 20000));
+        autoDigTask.Enqueue(WaitZone(sourceTerritory, false, 20000));
         autoDigTask.Enqueue(() =>
         {
-            if (GameState.TerritoryType == territory)
-                return FailIslandReentry("退出新月岛失败，已停止自动换岛");
+            if (GameState.TerritoryType == sourceTerritory)
+                return FailIslandTransfer("退出新月岛失败，已停止自动换岛");
 
             autoDigStatus = "换岛：等待 30 秒";
             return true;
@@ -1026,20 +1041,24 @@ internal sealed partial class OccultPotFeature
         autoDigTask.DelayNext(30000);
         autoDigTask.Enqueue(() =>
         {
-            autoDigStatus = "换岛：重新进入新月岛";
+            autoDigStatus = alternating ? $"换岛：进入{destinationName}" : "换岛：重新进入新月岛";
             SendCommand(entryCommand);
             return true;
         });
-        autoDigTask.Enqueue(WaitZone(territory, true, 60000));
+        autoDigTask.Enqueue(WaitZone(destinationTerritory, true, 60000));
         autoDigTask.Enqueue(() =>
         {
-            if (GameState.TerritoryType != territory)
-                return FailIslandReentry("重新进入新月岛超时，已停止自动换岛");
+            if (GameState.TerritoryType != destinationTerritory)
+                return FailIslandTransfer(alternating
+                    ? $"进入{destinationName}超时，已停止自动换岛"
+                    : "重新进入新月岛超时，已停止自动换岛");
 
             crossingDC = false;
             EndBocchiReturnSuppression();
             BocchiOn();
-            NotifyHelper.Instance().NotificationInfo("自动换岛完成");
+            NotifyHelper.Instance().NotificationInfo(alternating
+                ? $"已切换至{destinationName}"
+                : "自动换岛完成");
             FinishAutoDig();
             return true;
         });
@@ -1047,7 +1066,7 @@ internal sealed partial class OccultPotFeature
         return true;
     }
 
-    private bool FailIslandReentry(string message)
+    private bool FailIslandTransfer(string message)
     {
         DService.Instance().Log.Warning($"[KeitaToolbox.MagicPot] {message}");
         AbortAutoDig();
@@ -1127,6 +1146,7 @@ internal sealed partial class OccultPotFeature
 
     private void StartCrossDCQuery(uint territory)
     {
+        var lease = crossDCQueryGate.Begin();
         crossDCQuerying    = true;
         crossDCTargetDC    = 0;
         crossDCTargetWorld = string.Empty;
@@ -1134,7 +1154,7 @@ internal sealed partial class OccultPotFeature
         crossDCReason      = "查询中…";
         var islandTimeLeft = GetIslandTimeLeftSeconds();
         var forceTravel = CrossDCRoutingPolicy.ShouldForceTravel(islandTimeLeft);
-        _ = CrossDCQueryAsync(territory, forceTravel, islandTimeLeft);
+        _ = CrossDCQueryAsync(territory, forceTravel, islandTimeLeft, lease);
     }
 
 
@@ -1147,23 +1167,32 @@ internal sealed partial class OccultPotFeature
             if (!crossDCQuerying) return true;
             if (Environment.TickCount64 >= deadline)
             {
-                crossDCReason = "查询超时";
+                CancelCrossDCQuery("查询超时");
                 return true;
             }
             return false;
         };
     }
 
-    private async Task CrossDCQueryAsync(uint territory, bool forceTravel, float? islandTimeLeft)
+    private async Task CrossDCQueryAsync(
+        uint territory,
+        bool forceTravel,
+        float? islandTimeLeft,
+        AsyncOperationLease lease)
     {
         try
         {
             var currentDC           = CurrentDataCenter();
             var (homeDC, homeWorld) = HomeInfo();
             var json = await Client.GetStringAsync(
-                $"{TrackerBaseURL}{TrackerTable}?territory=eq.{territory}&datacenter=in.(101,102,103,104)&select=datacenter,pot_history,last_update&order=last_update.desc&limit=60");
+                $"{TrackerBaseURL}{TrackerTable}?territory=eq.{territory}&datacenter=in.(101,102,103,104)&select=datacenter,pot_history,last_update&order=last_update.desc&limit=60",
+                lease.Token);
             var rows = JsonConvert.DeserializeObject<CrossDCRow[]>(json);
-            if (rows == null) { crossDCReason = "查询无数据(rows=null)"; return; }
+            if (rows == null)
+            {
+                PublishCrossDCQuery(lease, new(0, string.Empty, "查询无数据(rows=null)"));
+                return;
+            }
 
             var now  = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var seen = new HashSet<ushort>();
@@ -1191,34 +1220,54 @@ internal sealed partial class OccultPotFeature
                         bestOverall = candidate;
                 }
 
-                crossDCReason = forceTravel && !hasEligibleOther
+                var reason = forceTravel && !hasEligibleOther
                                     ? $"岛内剩余 {Math.Floor(islandTimeLeft!.Value / 60)} 分钟，但其他大区均无 >5 分钟罐子"
                                     : seen.Count == 0
                                         ? "查询到 0 个大区数据"
                                         : bestOverall is null
                                             ? $"各大区罐子均 ≤5 分钟(已查{seen.Count}区)"
                                             : $"当前{currentDC}区罐子最近({bestOverall.Value.RemainingSeconds / 60}分),留守不跨";
+                PublishCrossDCQuery(lease, new(0, string.Empty, reason));
                 return;
             }
 
-            crossDCTargetDC = target.Value.DataCenter;
-
-            crossDCTargetWorld = target.Value.DataCenter == homeDC && !string.IsNullOrEmpty(homeWorld)
-                                     ? homeWorld
-                                     : CrossDCWorlds[target.Value.DataCenter];
+            var targetWorld = target.Value.DataCenter == homeDC && !string.IsNullOrEmpty(homeWorld)
+                                  ? homeWorld
+                                  : CrossDCWorlds[target.Value.DataCenter];
             var forceReason = forceTravel
                                   ? $"岛内剩余 {Math.Floor(islandTimeLeft!.Value / 60)} 分钟，"
                                   : string.Empty;
-            crossDCReason = $"{forceReason}→ {crossDCTargetWorld}({target.Value.RemainingSeconds / 60}分)";
+            var resultReason = $"{forceReason}→ {targetWorld}({target.Value.RemainingSeconds / 60}分)";
+            PublishCrossDCQuery(lease, new(target.Value.DataCenter, targetWorld, resultReason));
+        }
+        catch (OperationCanceledException) when (lease.Token.IsCancellationRequested)
+        {
         }
         catch (Exception ex)
         {
-            crossDCReason = $"查询异常: {ex.GetType().Name}";
+            PublishCrossDCQuery(lease, new(0, string.Empty, $"查询异常: {ex.GetType().Name}"));
         }
-        finally
+    }
+
+    private void PublishCrossDCQuery(AsyncOperationLease lease, CrossDCQueryResult result)
+    {
+        crossDCQueryGate.TryApply(lease, () =>
         {
+            crossDCTargetDC = result.DataCenter;
+            crossDCTargetWorld = result.World;
+            crossDCReason = result.Reason;
             crossDCQuerying = false;
-        }
+        });
+    }
+
+    private void CancelCrossDCQuery(string reason = "")
+    {
+        crossDCQueryGate.Invalidate();
+        crossDCQuerying = false;
+        crossDCTargetDC = 0;
+        crossDCTargetWorld = string.Empty;
+        crossDCTargetTerritory = 0;
+        crossDCReason = reason;
     }
 
     private static unsafe float? GetIslandTimeLeftSeconds()
@@ -1276,6 +1325,11 @@ internal sealed partial class OccultPotFeature
         [JsonProperty("pot_history")]
         public string PotHistory = string.Empty;
     }
+
+    private readonly record struct CrossDCQueryResult(
+        ushort DataCenter,
+        string World,
+        string Reason);
 
     private static bool SendCommand(string command)
     {
@@ -3037,6 +3091,7 @@ internal sealed partial class OccultPotFeature
     private void AbortAutoDig()
     {
         StopNorthHornAggroAvoidance();
+        CancelCrossDCQuery();
         autoDigTask?.Abort();
         pendingCofferHuntAutoDigFor = -1;
         pendingPostFateAutoDigTarget = null;

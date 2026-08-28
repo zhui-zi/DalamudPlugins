@@ -201,6 +201,7 @@ internal sealed partial class OccultPotFeature : IDisposable
     private const string BmrWalkInputSignature = "E8 ?? ?? ?? ?? 80 7B 3E 00 48 8D 3D";
 
     private volatile bool crossDCQuerying;
+    private readonly AsyncOperationGate crossDCQueryGate = new();
     private ushort        crossDCTargetDC;
     private string        crossDCTargetWorld = string.Empty;
     private uint          crossDCTargetTerritory;
@@ -288,9 +289,12 @@ internal sealed partial class OccultPotFeature : IDisposable
     private          TrackerRow? currentTracker;
     private          int         missingTrackerChecks;
     private          long   lastSyncAt;
+    private          string pendingLookupFingerprint = string.Empty;
+    private          long   pendingLookupAt;
     private volatile bool   syncInFlight;
     private volatile bool   syncRequested;
     private volatile bool   hasOnlineData;
+    private readonly AsyncOperationGate trackerSyncGate = new();
     private readonly object syncLock = new();
     private (uint Territory, long NorthSpawn, long NorthSeen, long SouthSpawn, long SouthSeen)? pendingSync;
 
@@ -497,6 +501,10 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     public void Dispose()
     {
+        Plugin.Scheduler.Cancel(AutoDiscardScheduleGroup);
+        Plugin.Scheduler.Cancel(AutoBocchiScheduleGroup);
+        trackerSyncGate.Dispose();
+        crossDCQueryGate.Dispose();
         StopPotFateApproach();
         RestoreBmrAiAfterPotFate();
         RestoreSupportJobAfterPotFate();
@@ -650,6 +658,12 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (ImGui.BeginTabItem("地图标记"))
         {
             ConfigUIMarkers();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("入岛操作"))
+        {
+            ConfigUIEntryActions();
             ImGui.EndTabItem();
         }
 
@@ -961,22 +975,48 @@ internal sealed partial class OccultPotFeature : IDisposable
                 if (ImGui.Checkbox("半血以下被高等级敌人攻击时紧急返回", ref config.AutoDigEmergencyReturn))
                     config.Save(this);
 
-                ConfigSection("完成后操作");
-                if (ImGui.Checkbox("挖完自动跨区（选刷新最短且 >5 分钟的大区）", ref config.EnableAutoCrossDC))
-                    config.Save(this);
-                if (config.EnableAutoCrossDC)
-                    ImGui.TextColored(KnownColor.Orange.ToVector4(),
-                        "岛内剩余不足 90 分钟且有可用目标时强制选择其他大区；需启用 /pdrfe 和 /pdr worldtravel；跨区有崩游戏风险。");
-
-                using (ImRaii.Disabled(config.EnableAutoCrossDC))
+                ConfigSection("运行模式");
+                var runModeName = config.AutoDigRunMode switch
                 {
-                    if (ImGui.Checkbox("挖完时岛内不足 90 分钟自动换岛", ref config.ReenterIslandWhenTimeLow))
-                        config.Save(this);
+                    AutoDigRunMode.ReenterCurrentIslandWhenTimeLow => "低时长重进当前岛",
+                    AutoDigRunMode.AlternateIslands                 => "南征 / 北征交替",
+                    AutoDigRunMode.CrossDataCenter                  => "自动跨大区",
+                    _                                               => "当前岛待命"
+                };
+                if (ImGui.BeginCombo("挖罐完成后", runModeName))
+                {
+                    if (ImGui.Selectable("当前岛待命", config.AutoDigRunMode == AutoDigRunMode.ReturnToBase))
+                        SetAutoDigRunMode(AutoDigRunMode.ReturnToBase);
+                    if (ImGui.Selectable(
+                            "低时长重进当前岛",
+                            config.AutoDigRunMode == AutoDigRunMode.ReenterCurrentIslandWhenTimeLow))
+                        SetAutoDigRunMode(AutoDigRunMode.ReenterCurrentIslandWhenTimeLow);
+                    if (ImGui.Selectable("南征 / 北征交替", config.AutoDigRunMode == AutoDigRunMode.AlternateIslands))
+                        SetAutoDigRunMode(AutoDigRunMode.AlternateIslands);
+                    if (ImGui.Selectable("自动跨大区", config.AutoDigRunMode == AutoDigRunMode.CrossDataCenter))
+                        SetAutoDigRunMode(AutoDigRunMode.CrossDataCenter);
+                    ImGui.EndCombo();
                 }
-                if (config.ReenterIslandWhenTimeLow && !config.EnableAutoCrossDC)
-                    ImGui.TextColored(KnownColor.Gray.ToVector4(),
-                        "退出副本并等待 30 秒后重新进入当前南征或北征；需启用 /pdrfe。");
+                var runModeDescription = config.AutoDigRunMode switch
+                {
+                    AutoDigRunMode.ReenterCurrentIslandWhenTimeLow =>
+                        "岛内剩余不足 90 分钟时，退出副本并等待 30 秒后重新进入当前南征或北征；需启用 /pdrfe。",
+                    AutoDigRunMode.AlternateIslands =>
+                        "每轮挖罐完成后退出副本并等待 30 秒，再进入另一座岛；南征与北征交替运行，不进行跨大区操作；需启用 /pdrfe。",
+                    AutoDigRunMode.CrossDataCenter =>
+                        "选择刷新最短且 >5 分钟的大区；岛内剩余不足 90 分钟且有可用目标时强制选择其他大区；需启用 /pdrfe 和 /pdr worldtravel；跨区有崩游戏风险。",
+                    _ => "每轮挖罐完成后返回当前岛起始点并待命。"
+                };
+                var wrapPosition = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
+                ImGui.PushTextWrapPos(wrapPosition);
+                ImGui.TextColored(
+                    config.AutoDigRunMode == AutoDigRunMode.CrossDataCenter
+                        ? KnownColor.Orange.ToVector4()
+                        : KnownColor.Gray.ToVector4(),
+                    runModeDescription);
+                ImGui.PopTextWrapPos();
 
+                ConfigSection("自动寻宝");
                 if (ImGui.Checkbox("宝箱达到数量时自动寻宝", ref config.EnableCofferHunt))
                     config.Save(this);
                 if (config.EnableCofferHunt)
@@ -1333,6 +1373,10 @@ internal sealed partial class OccultPotFeature : IDisposable
 
     private void OnZoneChanged(uint zone)
     {
+        ScheduleAutoDiscardOnEntry(zone);
+        ScheduleAutoBocchiIllegalOnEntry(zone);
+        trackerSyncGate.Invalidate();
+        syncInFlight = false;
         StopPotFateApproach();
         RestoreBmrAiAfterPotFate();
         RestoreSupportJobAfterPotFate();
@@ -1375,6 +1419,8 @@ internal sealed partial class OccultPotFeature : IDisposable
         currentTracker      = null;
         missingTrackerChecks = 0;
         lastSyncAt          = 0;
+        pendingLookupFingerprint = string.Empty;
+        pendingLookupAt     = 0;
         syncRequested       = false;
         hasOnlineData       = false;
         lock (syncLock)
@@ -3518,6 +3564,18 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (syncInFlight) return;
         if (!TryBuildContext(out var context)) return;
 
+        if (!hasOnlineData && currentTracker == null && context.Fingerprint != lastFingerprint)
+        {
+            if (pendingLookupFingerprint != context.Fingerprint)
+            {
+                pendingLookupFingerprint = context.Fingerprint;
+                pendingLookupAt = Environment.TickCount64 + Random.Shared.Next(2_500, 4_001);
+            }
+
+            if (Environment.TickCount64 < pendingLookupAt)
+                return;
+        }
+
         var refresh = hasOnlineData ? SyncRefreshSeconds : FastRetrySeconds;
         var due     = syncRequested ||
                       context.Fingerprint != lastFingerprint ||
@@ -3526,9 +3584,11 @@ internal sealed partial class OccultPotFeature : IDisposable
 
         lastFingerprint = context.Fingerprint;
         lastSyncAt      = now;
+        pendingLookupFingerprint = string.Empty;
+        pendingLookupAt = 0;
         syncRequested   = false;
         syncInFlight    = true;
-        _ = SyncAsync(context, now);
+        _ = SyncAsync(context, now, trackerSyncGate.Capture());
     }
 
     private bool TryBuildContext(out SyncContext context)
@@ -3590,63 +3650,98 @@ internal sealed partial class OccultPotFeature : IDisposable
         return sb.ToString();
     }
 
-    private async Task SyncAsync(SyncContext context, long now)
+    private async Task SyncAsync(SyncContext context, long now, AsyncOperationLease lease)
     {
         try
         {
             var json = await Client.GetStringAsync(
-                $"{TrackerBaseURL}{TrackerTable}?last_fate=eq.{context.Fingerprint}&territory=eq.{context.Territory}");
+                $"{TrackerBaseURL}{TrackerTable}?last_fate=eq.{context.Fingerprint}&territory=eq.{context.Territory}",
+                lease.Token);
             var rows = JsonConvert.DeserializeObject<TrackerRow[]>(json);
             if (rows is not { Length: > 0 } && context.Territory == OccultTerritory)
             {
                 var legacyJson = await Client.GetStringAsync(
-                    $"{TrackerBaseURL}{TrackerTable}?last_fate=eq.{context.Fingerprint}&territory=eq.0");
+                    $"{TrackerBaseURL}{TrackerTable}?last_fate=eq.{context.Fingerprint}&territory=eq.0",
+                    lease.Token);
                 rows = JsonConvert.DeserializeObject<TrackerRow[]>(legacyJson);
             }
 
             if (rows is { Length: > 0 })
             {
-                var row    = SelectTracker(rows);
-                var shared = ParseSharedPotHistory(row);
-                BindTracker(row);
-                QueueSharedPotHistory(shared, context);
-                await PatchPotHistoryAsync(row, context, now, shared);
-            }
-            else if (currentTracker is { RowID: > 0 } row && row.Territory == context.Territory)
-            {
-                var shared = ParseSharedPotHistory(row);
-                QueueSharedPotHistory(shared, context);
-                await PatchPotHistoryAsync(row, context, now, shared);
-            }
-            else if (context.HasObservation)
-            {
-                if (missingFingerprint == context.Fingerprint)
-                    missingTrackerChecks++;
-                else
-                {
-                    missingFingerprint   = context.Fingerprint;
-                    missingTrackerChecks = 1;
-                }
+                TrackerRow? row = null;
+                if (!trackerSyncGate.TryApply(lease, () => row = SelectTracker(rows))) return;
+                if (row == null) return;
 
-                if (missingTrackerChecks >= MissingTrackerChecksBeforeCreate)
+                var shared = ParseSharedPotHistory(row);
+                if (!trackerSyncGate.TryApply(lease, () =>
+                    {
+                        BindTracker(row);
+                        QueueSharedPotHistory(shared, context);
+                    })) return;
+
+                await PatchPotHistoryAsync(row, context, now, shared, lease);
+                return;
+            }
+
+            TrackerRow? existing = null;
+            if (!trackerSyncGate.TryApply(lease, () =>
                 {
-                    var created = await CreateRowAsync(context, now);
-                    if (created != null)
-                        BindTracker(created);
+                    if (currentTracker is { RowID: > 0 } row && row.Territory == context.Territory)
+                        existing = row;
+                })) return;
+
+            if (existing != null)
+            {
+                var shared = ParseSharedPotHistory(existing);
+                if (!trackerSyncGate.TryApply(lease, () => QueueSharedPotHistory(shared, context))) return;
+                await PatchPotHistoryAsync(existing, context, now, shared, lease);
+                return;
+            }
+
+            if (context.HasObservation)
+            {
+                var shouldCreate = false;
+                if (!trackerSyncGate.TryApply(lease, () =>
+                {
+                    if (missingFingerprint == context.Fingerprint)
+                        missingTrackerChecks++;
+                    else
+                    {
+                        missingFingerprint   = context.Fingerprint;
+                        missingTrackerChecks = 1;
+                    }
+
+                    shouldCreate = missingTrackerChecks >= MissingTrackerChecksBeforeCreate;
+                })) return;
+
+                if (shouldCreate)
+                {
+                    var createdRows = await CreateRowAsync(context, now, lease);
+                    if (createdRows is { Length: > 0 })
+                        trackerSyncGate.TryApply(lease, () => BindTracker(SelectTracker(createdRows)));
                 }
             }
             else
             {
-                missingFingerprint   = string.Empty;
-                missingTrackerChecks = 0;
+                trackerSyncGate.TryApply(lease, () =>
+                {
+                    missingFingerprint   = string.Empty;
+                    missingTrackerChecks = 0;
+                });
             }
         }
-        catch
+        catch (OperationCanceledException) when (lease.Token.IsCancellationRequested)
         {
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Debug(ex,
+                "Magic Pot tracker synchronization failed for territory {Territory}.",
+                context.Territory);
         }
         finally
         {
-            syncInFlight = false;
+            trackerSyncGate.TryApply(lease, () => syncInFlight = false);
         }
     }
 
@@ -3710,7 +3805,12 @@ internal sealed partial class OccultPotFeature : IDisposable
             pendingSync = (context.Territory, ns, nl, ss, sl);
     }
 
-    private async Task PatchPotHistoryAsync(TrackerRow row, SyncContext context, long now, SharedPot[]? shared)
+    private async Task PatchPotHistoryAsync(
+        TrackerRow row,
+        SyncContext context,
+        long now,
+        SharedPot[]? shared,
+        AsyncOperationLease lease)
     {
         if (row.RowID <= 0) return;
 
@@ -3743,19 +3843,28 @@ internal sealed partial class OccultPotFeature : IDisposable
         var body = JsonConvert.SerializeObject(update);
 
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        var response = await Client.PatchAsync($"{TrackerBaseURL}{TrackerTable}?id=eq.{row.RowID}", content);
+        using var response = await Client.PatchAsync(
+            $"{TrackerBaseURL}{TrackerTable}?id=eq.{row.RowID}",
+            content,
+            lease.Token);
         response.EnsureSuccessStatusCode();
 
-        row.LastFateHash  = context.Fingerprint;
-        row.Server        = context.Server;
-        row.Fate          = context.FateID;
-        row.FateTimestamp = context.FateTimestamp;
-        row.LastUpdate    = now;
-        if (potHistory != null)
-            row.PotHistory = potHistory;
+        trackerSyncGate.TryApply(lease, () =>
+        {
+            row.LastFateHash  = context.Fingerprint;
+            row.Server        = context.Server;
+            row.Fate          = context.FateID;
+            row.FateTimestamp = context.FateTimestamp;
+            row.LastUpdate    = now;
+            if (potHistory != null)
+                row.PotHistory = potHistory;
+        });
     }
 
-    private async Task<TrackerRow?> CreateRowAsync(SyncContext context, long now)
+    private async Task<TrackerRow[]?> CreateRowAsync(
+        SyncContext context,
+        long now,
+        AsyncOperationLease lease)
     {
         var potHistory = JsonConvert.SerializeObject(new[]
         {
@@ -3780,12 +3889,20 @@ internal sealed partial class OccultPotFeature : IDisposable
         });
 
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        var response = await Client.PostAsync($"{TrackerBaseURL}{TrackerTable}", content);
+        using var response = await Client.PostAsync(
+            $"{TrackerBaseURL}{TrackerTable}",
+            content,
+            lease.Token);
         response.EnsureSuccessStatusCode();
 
-        var respJson = await response.Content.ReadAsStringAsync();
+        var respJson = await response.Content.ReadAsStringAsync(lease.Token);
         var created  = JsonConvert.DeserializeObject<TrackerRow[]>(respJson);
-        return created is { Length: > 0 } ? created[0] : null;
+        if (created is { Length: > 0 }) return created;
+
+        var queryJson = await Client.GetStringAsync(
+            $"{TrackerBaseURL}{TrackerTable}?last_fate=eq.{context.Fingerprint}&territory=eq.{context.Territory}",
+            lease.Token);
+        return JsonConvert.DeserializeObject<TrackerRow[]>(queryJson);
     }
 
     private static UploadPot MergePot(uint fateID, PotObs local, SharedPot[]? shared, ref bool changed)
@@ -3835,110 +3952,6 @@ internal sealed partial class OccultPotFeature : IDisposable
         if (pot.Alive) return;
         if (lastSeen > pot.LastSeenAlive) pot.LastSeenAlive = lastSeen;
         if (spawn    > pot.SpawnTime)     pot.SpawnTime     = spawn;
-    }
-
-    private struct SyncContext
-    {
-        public string Fingerprint;
-        public ushort Datacenter;
-        public uint   Territory;
-        public uint   Server;
-        public uint   FateID;
-        public int    FateTimestamp;
-        public ushort NorthFateID;
-        public ushort SouthFateID;
-        public PotObs North;
-        public PotObs South;
-
-        public readonly bool HasObservation =>
-            (North.Observed && North.Spawn > 0) || (South.Observed && South.Spawn > 0);
-    }
-
-    private readonly struct PotObs
-    {
-        public bool Observed { get; init; }
-        public long Spawn    { get; init; }
-        public long Death    { get; init; }
-        public long LastSeen { get; init; }
-
-        public static PotObs From(Pot pot) => new()
-        {
-            Observed = pot.LocallyObserved,
-            Spawn    = pot.SpawnTime,
-            Death    = pot.DeathTime,
-            LastSeen = pot.LastSeenAlive
-        };
-    }
-
-    private class TrackerRow
-    {
-        [JsonProperty("id")]
-        public long RowID { get; set; }
-
-        [JsonProperty("territory")]
-        public uint Territory { get; set; }
-
-        [JsonProperty("tracker_id")]
-        public string TrackerID = string.Empty;
-
-        [JsonProperty("last_update")]
-        public long LastUpdate;
-
-        [JsonProperty("last_fate")]
-        public string LastFateHash = string.Empty;
-
-        [JsonProperty("server")]
-        public uint Server;
-
-        [JsonProperty("fate")]
-        public uint Fate;
-
-        [JsonProperty("fate_timestamp")]
-        public int FateTimestamp;
-
-        [JsonProperty("pot_history")]
-        public string PotHistory = string.Empty;
-    }
-
-    private struct SharedPot
-    {
-        [JsonProperty("fate_id")]
-        public uint FateID { get; set; }
-
-        [JsonProperty("spawn_time")]
-        public long SpawnTime { get; set; }
-
-        [JsonProperty("death_time")]
-        public long DeathTime { get; set; }
-
-        [JsonProperty("last_seen")]
-        public long LastSeen { get; set; }
-    }
-
-    private class UploadPot
-    {
-        [JsonProperty("fate_id")]
-        public uint FateID;
-
-        [JsonProperty("spawn_time")]
-        public long SpawnTime;
-
-        [JsonProperty("death_time")]
-        public long DeathTime;
-
-        [JsonProperty("last_seen")]
-        public long LastSeen;
-
-        [JsonProperty("respawn_times")]
-        public long[] RespawnTimes = [];
-
-        public static UploadPot From(uint fateID, PotObs obs) => new()
-        {
-            FateID    = fateID,
-            SpawnTime = obs.Observed ? obs.Spawn    : -1,
-            DeathTime = obs.Observed ? obs.Death    : 0,
-            LastSeen  = obs.Observed ? obs.LastSeen : -1
-        };
     }
 
     private enum PotDisplayMode
@@ -4050,9 +4063,16 @@ internal sealed partial class OccultPotFeature : IDisposable
         public bool      AutoDigReturnOnDeath = true;
         public bool      AutoDigWaitForRescue;
         public bool      AutoDigEmergencyReturn;
-        public bool      EnableAutoCrossDC;
-        public bool      ReenterIslandWhenTimeLow;
+        public AutoDigRunMode AutoDigRunMode;
+        [JsonProperty("EnableAutoCrossDC", NullValueHandling = NullValueHandling.Ignore)]
+        private bool? LegacyEnableAutoCrossDC;
+        [JsonProperty("ReenterIslandWhenTimeLow", NullValueHandling = NullValueHandling.Ignore)]
+        private bool? LegacyReenterIslandWhenTimeLow;
         public bool      AutoDeclineInvite;
+
+        public bool      EnableAutoDiscardOnEntry;
+        public string    AutoDiscardGroupName = string.Empty;
+        public bool      EnableBocchiIllegalOnEntry;
 
 
         [JsonProperty("EnableBocchiHunt")]
@@ -4075,7 +4095,9 @@ internal sealed partial class OccultPotFeature : IDisposable
             {
                 try
                 {
-                    return JsonConvert.DeserializeObject<Config>(payload) ?? new Config();
+                    var loaded = JsonConvert.DeserializeObject<Config>(payload) ?? new Config();
+                    loaded.MigrateAutoDigRunMode();
+                    return loaded;
                 }
                 catch (Exception ex)
                 {
@@ -4088,6 +4110,17 @@ internal sealed partial class OccultPotFeature : IDisposable
                 EnableAutoRevive = Plugin.Config.Features.OccultPotAutoRevive,
                 AutoRevivePartyOnly = Plugin.Config.OccultPot.AutoRevivePartyOnly,
             };
+        }
+
+        private void MigrateAutoDigRunMode()
+        {
+            AutoDigRunMode = AutoDigRunModePolicy.ResolveLegacyMode(
+                AutoDigRunMode,
+                LegacyEnableAutoCrossDC,
+                LegacyReenterIslandWhenTimeLow);
+
+            LegacyEnableAutoCrossDC = null;
+            LegacyReenterIslandWhenTimeLow = null;
         }
 
         public void Save(OccultPotFeature _)

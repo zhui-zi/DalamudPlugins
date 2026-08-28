@@ -42,9 +42,61 @@ public sealed class Configuration : IPluginConfiguration
     public bool Migrate()
     {
         var changed = false;
+
+        Features = Ensure(Features, ref changed);
+        Interface = Ensure(Interface, ref changed);
+        Bmrai = Ensure(Bmrai, ref changed);
+        Duty = Ensure(Duty, ref changed);
+        AutoInvite = Ensure(AutoInvite, ref changed);
+        Trade = Ensure(Trade, ref changed);
+        PartyFinder = Ensure(PartyFinder, ref changed);
+        PluginSwitcher = Ensure(PluginSwitcher, ref changed);
+        Portrait = Ensure(Portrait, ref changed);
+        Advanced = Ensure(Advanced, ref changed);
+        CombatUtilities = Ensure(CombatUtilities, ref changed);
+        MapGearset = Ensure(MapGearset, ref changed);
+        OccultPot = Ensure(OccultPot, ref changed);
+        AeAssistStartup = Ensure(AeAssistStartup, ref changed);
+        VerificationMonitor = Ensure(VerificationMonitor, ref changed);
+
+        AnonymousInstallId = EnsureString(AnonymousInstallId, ref changed);
+        OccultPotAssistantConfig = EnsureString(OccultPotAssistantConfig, ref changed);
+        Bmrai.CommandFormat = EnsureString(Bmrai.CommandFormat, ref changed);
+        AutoInvite.TextPattern = EnsureString(AutoInvite.TextPattern, ref changed);
+        Trade.ExtraCommands = EnsureString(Trade.ExtraCommands, ref changed);
+        PluginSwitcher.DisableInPvp = EnsureString(PluginSwitcher.DisableInPvp, ref changed);
+        PluginSwitcher.EnableInPvp = EnsureString(PluginSwitcher.EnableInPvp, ref changed);
+
+        Duty.CommenceWhitelist = Ensure(Duty.CommenceWhitelist, ref changed);
+        Duty.LeaveWhitelist = Ensure(Duty.LeaveWhitelist, ref changed);
+        Duty.ImmediateLeaveWhitelist = Ensure(Duty.ImmediateLeaveWhitelist, ref changed);
+        AutoInvite.ListenChannels = Ensure(AutoInvite.ListenChannels, ref changed);
+        PartyFinder.BlockedKeywords = Ensure(PartyFinder.BlockedKeywords, ref changed);
+        PluginSwitcher.MapRules = Ensure(PluginSwitcher.MapRules, ref changed);
+        MapGearset.Rules = Ensure(MapGearset.Rules, ref changed);
+        VerificationMonitor.LastNotifiedExpiryUnixSeconds = Ensure(
+            VerificationMonitor.LastNotifiedExpiryUnixSeconds,
+            ref changed);
+        VerificationMonitor.LastKnownExpiryUnixSeconds = Ensure(
+            VerificationMonitor.LastKnownExpiryUnixSeconds,
+            ref changed);
+
+        var mapRuleCount = PluginSwitcher.MapRules.Count;
+        PluginSwitcher.MapRules.RemoveAll(static rule => rule == null);
+        changed |= mapRuleCount != PluginSwitcher.MapRules.Count;
+        foreach (var rule in PluginSwitcher.MapRules)
+        {
+            rule.Territories = EnsureString(rule.Territories, ref changed);
+            rule.Disable = EnsureString(rule.Disable, ref changed);
+            rule.Enable = EnsureString(rule.Enable, ref changed);
+        }
+
+        var gearsetRuleCount = MapGearset.Rules.Count;
+        MapGearset.Rules.RemoveAll(static rule => rule == null);
+        changed |= gearsetRuleCount != MapGearset.Rules.Count;
         foreach (var rule in MapGearset.Rules)
         {
-            rule.TerritoryIds ??= [];
+            rule.TerritoryIds = Ensure(rule.TerritoryIds, ref changed);
             if (rule.TerritoryId > 0 && !rule.TerritoryIds.Contains(rule.TerritoryId))
             {
                 rule.TerritoryIds.Add(rule.TerritoryId);
@@ -69,19 +121,9 @@ public sealed class Configuration : IPluginConfiguration
             }
         }
 
-        VerificationMonitor ??= new VerificationMonitorSettings();
-        VerificationMonitor.LastNotifiedExpiryUnixSeconds ??= [];
-        VerificationMonitor.LastKnownExpiryUnixSeconds ??= [];
-
         if (!Guid.TryParseExact(AnonymousInstallId, "N", out _))
         {
             AnonymousInstallId = Guid.NewGuid().ToString("N");
-            changed = true;
-        }
-
-        if (Interface == null)
-        {
-            Interface = new InterfaceSettings();
             changed = true;
         }
 
@@ -92,6 +134,25 @@ public sealed class Configuration : IPluginConfiguration
         }
 
         return changed;
+    }
+
+    private static T Ensure<T>(T? value, ref bool changed)
+        where T : class, new()
+    {
+        if (value != null)
+            return value;
+
+        changed = true;
+        return new T();
+    }
+
+    private static string EnsureString(string? value, ref bool changed)
+    {
+        if (value != null)
+            return value;
+
+        changed = true;
+        return string.Empty;
     }
 }
 

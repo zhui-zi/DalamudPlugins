@@ -7,20 +7,49 @@ namespace KeitaToolbox;
 
 internal readonly record struct CrossDCCandidate(ushort DataCenter, long RemainingSeconds);
 
+internal enum AutoDigRunMode
+{
+    ReturnToBase,
+    ReenterCurrentIslandWhenTimeLow,
+    AlternateIslands,
+    CrossDataCenter
+}
+
+internal static class AutoDigRunModePolicy
+{
+    internal const uint SouthTerritory = 1252;
+    internal const uint NorthTerritory = 1346;
+
+    internal static uint? SelectIslandDestination(
+        AutoDigRunMode mode,
+        uint currentTerritory,
+        float? islandTimeLeftSeconds) => mode switch
+    {
+        AutoDigRunMode.ReenterCurrentIslandWhenTimeLow
+            when currentTerritory is SouthTerritory or NorthTerritory &&
+                 CrossDCRoutingPolicy.ShouldForceTravel(islandTimeLeftSeconds) => currentTerritory,
+        AutoDigRunMode.AlternateIslands when currentTerritory == SouthTerritory => NorthTerritory,
+        AutoDigRunMode.AlternateIslands when currentTerritory == NorthTerritory => SouthTerritory,
+        _ => null
+    };
+
+    internal static AutoDigRunMode ResolveLegacyMode(
+        AutoDigRunMode configuredMode,
+        bool? legacyCrossDataCenter,
+        bool? legacyReenterCurrentIsland) =>
+        legacyCrossDataCenter == true
+            ? AutoDigRunMode.CrossDataCenter
+            : legacyReenterCurrentIsland == true
+                ? AutoDigRunMode.ReenterCurrentIslandWhenTimeLow
+                : configuredMode;
+}
+
 internal static class CrossDCRoutingPolicy
 {
     private const float ForcedTravelThresholdSeconds = 90 * 60;
 
     internal static bool ShouldForceTravel(float? islandTimeLeftSeconds) =>
         islandTimeLeftSeconds is > 0 and < ForcedTravelThresholdSeconds;
-
-    internal static bool ShouldReenterIsland(
-        bool featureEnabled,
-        bool autoCrossDataCenterEnabled,
-        float? islandTimeLeftSeconds) =>
-        featureEnabled &&
-        !autoCrossDataCenterEnabled &&
-        ShouldForceTravel(islandTimeLeftSeconds);
 
     internal static CrossDCCandidate? SelectTarget(
         ushort currentDataCenter,
@@ -117,6 +146,52 @@ internal static class AutoAcceptRaisePolicy
         localPlayerDead &&
         !betweenAreas &&
         MatchesPrompt(promptText);
+}
+
+internal static class OccultAutoDiscardPolicy
+{
+    internal const long ReadyGraceMs = 2_000;
+
+    internal static string? BuildCommand(bool featureEnabled, uint territoryID, string groupName)
+    {
+        var normalizedGroupName = groupName.Trim();
+        if (!featureEnabled ||
+            territoryID is not 1252 and not 1346 ||
+            normalizedGroupName.Length == 0 ||
+            normalizedGroupName.IndexOfAny(['\r', '\n']) >= 0)
+            return null;
+
+        return $"/pdrdiscard {normalizedGroupName}";
+    }
+
+    internal static bool HasStableReadyState(
+        bool dailyRoutinesLoaded,
+        bool playerAvailable,
+        bool stateAllowsInventoryAction,
+        long readyDurationMs) =>
+        dailyRoutinesLoaded &&
+        playerAvailable &&
+        stateAllowsInventoryAction &&
+        readyDurationMs >= ReadyGraceMs;
+}
+
+internal static class OccultAutoBocchiPolicy
+{
+    internal static bool ShouldSchedule(bool featureEnabled, uint territoryID) =>
+        featureEnabled && territoryID is 1252 or 1346;
+
+    internal static string? BuildCommand(
+        bool featureEnabled,
+        uint territoryID,
+        bool bocchiLoaded,
+        bool playerAvailable,
+        bool betweenAreas) =>
+        ShouldSchedule(featureEnabled, territoryID) &&
+        bocchiLoaded &&
+        playerAvailable &&
+        !betweenAreas
+            ? "/bocchiillegal on"
+            : null;
 }
 
 internal static class CurrencyExchangeConfirmationPolicy
