@@ -1439,21 +1439,17 @@ internal sealed partial class OccultPotFeature
     {
         if (autoDigTask == null) return;
 
-        if (target.TerritoryID == OccultNorthTerritory && GetNearestNorthAetheryte(target.World) is { } northAetheryte)
+        if (GetNearestCrescentAetheryte(target.TerritoryID, target.World) is not { } aetheryte)
         {
-            EnqueueNorthAetheryteTravel(northAetheryte);
+            autoDigTask.Enqueue(() =>
+                FailAutoDigMovement($"未找到前往{target.DirName}罐可用的魔路水晶，已停止自动移动"));
             return;
         }
 
-        var aetheryteName = target.AetheryteData?.Name ?? target.Aetheryte;
-        if (string.IsNullOrWhiteSpace(aetheryteName)) return;
-
-        autoDigTask.Enqueue(() => SendCommand($"/pdr ptp {aetheryteName}"));
-        autoDigTask.DelayNext(1000);
-        autoDigTask.Enqueue(WaitArrive(target.AetherytePos, 50f, 20000));
+        EnqueueCrescentAetheryteTravel(target.TerritoryID, aetheryte);
     }
 
-    private void EnqueueNorthAetheryteTravel(CrescentAetheryte aetheryte)
+    private void EnqueueCrescentAetheryteTravel(uint territoryID, CrescentAetheryte aetheryte)
     {
         if (autoDigTask == null) return;
 
@@ -1466,7 +1462,9 @@ internal sealed partial class OccultPotFeature
         var baseRoadPosition   = Vector3.Zero;
         var baseRoadReady      = false;
         var baseTeleportStarted = false;
-        var basePosition         = CrescentAetheryte.NorthHornBaseCamp.Position;
+        var basePosition         = territoryID == OccultTerritory
+                                       ? CrescentAetheryte.ExpeditionBaseCamp.Position
+                                       : CrescentAetheryte.NorthHornBaseCamp.Position;
 
 
         autoDigTask.Enqueue(WaitDismounted(5000));
@@ -1571,12 +1569,18 @@ internal sealed partial class OccultPotFeature
         });
     }
 
-    private static CrescentAetheryte? GetNearestNorthAetheryte(Vector3 destination)
+    private static CrescentAetheryte? GetNearestCrescentAetheryte(uint territoryID, Vector3 destination)
     {
         CrescentAetheryte? nearest = null;
         var nearestDistance = float.MaxValue;
+        var candidates = territoryID == OccultTerritory
+                             ? CrescentAetheryte.SouthHornAetherytes
+                             : territoryID == OccultNorthTerritory
+                                 ? CrescentAetheryte.NorthHornAetherytes
+                                 : null;
+        if (candidates == null) return null;
 
-        foreach (var candidate in CrescentAetheryte.NorthHornAetherytes)
+        foreach (var candidate in candidates)
         {
             var distance = Vector3.DistanceSquared(candidate.Position, destination);
             if (distance >= nearestDistance) continue;
