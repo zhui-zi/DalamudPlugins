@@ -35,7 +35,7 @@
     "Author": "doomzao, zhui-zi",
     "Name": "凯夫卡的面具",
     "InternalName": "MaskOfKefka",
-    "AssemblyVersion": "0.2.0.1",
+    "AssemblyVersion": "0.2.0.2",
     "Description": "为 OBS 创建独立的纯净游戏输出窗口，不显示 ImGui 或 Dalamud 浮层；也可选择仅输出游戏场景并隐藏游戏界面。",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/zhui-zi/mask-of-kefka",
@@ -56,7 +56,7 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1787989003,
+    "LastUpdate": 1788000532,
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/MaskOfKefka/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/MaskOfKefka/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/MaskOfKefka/latest.zip"
