@@ -240,6 +240,8 @@ public sealed class FeatureSwitches
     public bool MapGearsetSwitch { get; set; }
     public bool OccultPotAutoRevive { get; set; }
     public bool FashionReportAssistant { get; set; } = true;
+    public bool AutoOutOnALimb { get; set; }
+    public bool AutoTreasureOpen { get; set; }
 }
 
 [Serializable]
@@ -261,6 +263,18 @@ public sealed class DutySettings
     public bool ForceLeave { get; set; }
     public bool SkipHighEndDuties { get; set; }
     public bool LeaveMentorRoulette { get; set; }
+    public bool TreasureOpenSoloModeOnly { get; set; } = true;
+    public float TreasureOpenMaxDistance { get; set; } = 30f;
+    public int TreasureOpenCheckIntervalMs { get; set; } = 500;
+    public int TreasureOpenPostCombatCooldownMs { get; set; } = 1500;
+    public int TreasureOpenMoveDelayMs { get; set; } = 80;
+    public int TreasureOpenReturnDelayMs { get; set; } = 120;
+    public int TreasureOpenRetryCount { get; set; } = 2;
+    public int TreasureOpenRetryDelayMs { get; set; } = 300;
+    public bool TreasureOpenPreventPullback { get; set; }
+    public bool ShowTreasureOpenNotification { get; set; } = true;
+    public bool ShowTreasureOpenDebugLog { get; set; }
+    public int TotalTreasureOpenCount { get; set; }
 }
 
 [Serializable]

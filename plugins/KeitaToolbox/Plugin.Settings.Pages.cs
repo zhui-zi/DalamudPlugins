@@ -26,7 +26,7 @@ public sealed partial class Plugin
             "管理魔法罐提醒、地图标记、自动化与战斗辅助。"),
         SettingsPage.GoldSaucer => (
             "金碟游乐场",
-            "管理时尚品鉴提示与候选装备数据。"),
+            "管理小游戏自动化与时尚品鉴提示。"),
         SettingsPage.Integrations => (
             "插件联动",
             "管理外部插件启动、自动切换、参数同步与验证监控。"),

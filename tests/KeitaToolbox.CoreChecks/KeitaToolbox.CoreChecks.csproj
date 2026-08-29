@@ -14,6 +14,8 @@
     <Compile Include="..\..\plugins\KeitaToolbox\DeferredScheduler.cs" Link="DeferredScheduler.cs" />
     <Compile Include="..\..\plugins\KeitaToolbox\AsyncOperationGate.cs" Link="AsyncOperationGate.cs" />
     <Compile Include="..\..\plugins\KeitaToolbox\Configuration.cs" Link="Configuration.cs" />
+    <Compile Include="..\..\plugins\KeitaToolbox\OutOnALimbSearchPolicy.cs" Link="OutOnALimbSearchPolicy.cs" />
+    <Compile Include="..\..\plugins\KeitaToolbox\AutoTreasureOpenPolicy.cs" Link="AutoTreasureOpenPolicy.cs" />
     <Compile Include="..\..\plugins\KeitaToolbox\PluginSwitchingPolicy.cs" Link="PluginSwitchingPolicy.cs" />
   </ItemGroup>
 </Project>

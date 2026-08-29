@@ -94,6 +94,10 @@ public sealed partial class Plugin
         {
             case SettingsPage.DutyFlow:
                 basicFeatures?.DrawCommenceSettings();
+                if (autoTreasureOpenFeature == null)
+                    DrawUnavailable("自动开箱");
+                else
+                    autoTreasureOpenFeature.DrawSettings();
                 autoLeaveFeature?.DrawSettings();
                 basicFeatures?.DrawAnnouncementSettings();
                 break;
@@ -161,6 +165,10 @@ public sealed partial class Plugin
                     occultPotFeature.DrawSettings();
                 break;
             case SettingsPage.GoldSaucer:
+                if (outOnALimbFeature == null)
+                    DrawUnavailable("自动游玩孤树无援");
+                else
+                    outOnALimbFeature.DrawSettings();
                 if (fashionReportFeature == null)
                     DrawUnavailable("时尚品鉴助手");
                 else

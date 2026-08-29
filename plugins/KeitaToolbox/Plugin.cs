@@ -59,6 +59,7 @@ public sealed partial class Plugin : IDalamudPlugin
     private BasicFeatures? basicFeatures;
     private AutoInviteFeature? autoInviteFeature;
     private AutoLeaveFeature? autoLeaveFeature;
+    private AutoTreasureOpenFeature? autoTreasureOpenFeature;
     private AutoRefuseTradeFeature? autoRefuseTradeFeature;
     private PortraitGearSyncFeature? portraitFeature;
     private AdvancedToolsFeature? advancedToolsFeature;
@@ -68,6 +69,7 @@ public sealed partial class Plugin : IDalamudPlugin
     private AeAssistStartupFeature? aeAssistStartupFeature;
     private VerificationMonitorFeature? verificationMonitorFeature;
     private FashionReportFeature? fashionReportFeature;
+    private OutOnALimbFeature? outOnALimbFeature;
     private PartyAliasFeature? partyAliasFeature;
     private bool omenServicesInitialized;
     private bool runtimeInitialized;
@@ -147,12 +149,18 @@ public sealed partial class Plugin : IDalamudPlugin
             () => new MapGearsetFeature());
         if (omenServicesInitialized)
         {
+            autoTreasureOpenFeature = CreateFeature(
+                "automatic treasure opening",
+                () => new AutoTreasureOpenFeature());
             occultPotFeature = CreateFeature(
                 "Magic Pot Assistant",
                 () => new OccultPotFeature());
             voidAetherFeature = CreateFeature(
                 "void aether tools",
                 () => new VoidAetherFeature(advancedToolsFeature));
+            outOnALimbFeature = CreateFeature(
+                "Out on a Limb automation",
+                () => new OutOnALimbFeature());
         }
         aeAssistStartupFeature = CreateFeature(
             "AEAssist startup automation",
@@ -187,6 +195,7 @@ public sealed partial class Plugin : IDalamudPlugin
         TryCleanup("framework update event", () => Framework.Update -= OnFrameworkUpdate);
 
         DisposeFeature(verificationMonitorFeature, "plugin verification monitor");
+        DisposeFeature(outOnALimbFeature, "Out on a Limb automation");
         DisposeFeature(fashionReportFeature, "Fashion Report assistant");
         DisposeFeature(partyAliasFeature, "party name aliases");
         DisposeFeature(aeAssistStartupFeature, "AEAssist startup automation");
@@ -196,6 +205,7 @@ public sealed partial class Plugin : IDalamudPlugin
         DisposeFeature(advancedToolsFeature, "advanced tools");
         DisposeFeature(portraitFeature, "portrait gear synchronization");
         DisposeFeature(autoRefuseTradeFeature, "automatic trade refusal");
+        DisposeFeature(autoTreasureOpenFeature, "automatic treasure opening");
         DisposeFeature(autoLeaveFeature, "automatic duty leave");
         DisposeFeature(autoInviteFeature, "automatic party invite");
         DisposeFeature(basicFeatures, "general tools");

@@ -8,6 +8,33 @@ namespace KeitaToolbox.CoreChecks;
 public sealed class PolicyTests
 {
     [TestMethod]
+    public void AutoTreasureOpenRequiresSafeDutyContext()
+    {
+        Assert.IsTrue(AutoTreasureOpenPolicy.IsReady(
+            true, true, true, 1, true, false, false, 1500, 1500));
+        Assert.IsFalse(AutoTreasureOpenPolicy.IsReady(
+            true, true, true, 2, true, false, false, 1500, 1500));
+        Assert.IsFalse(AutoTreasureOpenPolicy.IsReady(
+            true, true, false, 2, true, true, false, 1500, 1500));
+        Assert.IsFalse(AutoTreasureOpenPolicy.IsReady(
+            true, true, false, 2, true, false, false, 1499, 1500));
+    }
+
+    [TestMethod]
+    public void OutOnALimbSearchMatchesFeedbackRanges()
+    {
+        var policy = new OutOnALimbSearchPolicy();
+
+        Assert.AreEqual((byte)69, policy.SelectNext(20, 1));
+
+        policy.Reset();
+        Assert.AreEqual((byte)35, policy.SelectNext(20, 2));
+
+        policy.Reset();
+        Assert.AreEqual((byte)16, policy.SelectNext(20, 3));
+    }
+
+    [TestMethod]
     public void CrossDCRoutingForcesAnotherDataCenterWhenIslandTimeIsLow()
     {
         CrossDCCandidate[] candidates =
