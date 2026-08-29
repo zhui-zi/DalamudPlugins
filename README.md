@@ -13,7 +13,9 @@ Magic Pot automation uses DailyRoutines for travel and duty commands, BOCCHI for
 
 ## Development
 
-Run `powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1` for the plugin build, core tests, unlock Worker checks, architecture limits, and diff validation. The plugin build requires a local Dalamud CN development runtime.
+KeitaToolbox source and development instructions are maintained in the [KeitaToolbox repository](https://github.com/zhui-zi/KeitaToolbox).
+
+Run `pwsh -NoProfile -File .\scripts\verify.ps1` to validate repository manifests, release packages, the unlock Worker, and Git diffs.
 
 ## License
 
