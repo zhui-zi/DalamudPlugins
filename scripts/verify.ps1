@@ -15,6 +15,14 @@ function Assert-LastExitCode([string]$Step)
 }
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+$npmCommand = if (Get-Command npm.cmd -ErrorAction SilentlyContinue)
+{
+    'npm.cmd'
+}
+else
+{
+    'npm'
+}
 Push-Location $repositoryRoot
 try
 {
@@ -68,11 +76,11 @@ try
 
     if (!$SkipNpmInstall)
     {
-        & npm.cmd ci --prefix 'workers\dalamud-unlock'
+        & $npmCommand ci --prefix 'workers\dalamud-unlock'
         Assert-LastExitCode 'Unlock Worker install'
     }
 
-    & npm.cmd run check --prefix 'workers\dalamud-unlock'
+    & $npmCommand run check --prefix 'workers\dalamud-unlock'
     Assert-LastExitCode 'Unlock Worker checks'
 
     & git diff --check
