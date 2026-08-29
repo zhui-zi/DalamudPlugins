@@ -660,7 +660,7 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
         if (!ImGui.TreeNode("高级同步规则"))
             return;
 
-        ImGui.TextDisabled("装备套装更新");
+        Plugin.DrawDisabledWrapped("装备套装更新");
         DrawOption(
             "重新应用关联的投影模板",
             Plugin.Config.Portrait.ReequipLinkedGlamourPlate,
@@ -671,7 +671,7 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
             value => Plugin.Config.Portrait.UpdatePortraitOnGearsetUpdate = value);
 
         ImGui.Spacing();
-        ImGui.TextDisabled("其他装备变更");
+        Plugin.DrawDisabledWrapped("其他装备变更");
         DrawOption(
             "同步头部显示与面罩状态",
             Plugin.Config.Portrait.SyncHeadgearChanges,
@@ -682,7 +682,7 @@ internal sealed unsafe class PortraitGearSyncFeature : IDisposable
             value => Plugin.Config.Portrait.SyncRecommendedGear = value);
 
         ImGui.Spacing();
-        ImGui.TextDisabled("应用投影模板后");
+        Plugin.DrawDisabledWrapped("应用投影模板后");
         DrawOption(
             "更新当前套装与即时肖像",
             Plugin.Config.Portrait.SyncAfterGlamourPlate,

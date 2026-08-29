@@ -27,7 +27,7 @@ internal sealed partial class OccultPotFeature
             if (ImGui.Checkbox("进入新月岛时自动开启 BOCCHI 非法模式", ref config.EnableBocchiIllegalOnEntry))
                 config.Save(this);
 
-            ImGui.TextColored(
+            Plugin.DrawColoredWrapped(
                 KnownColor.Gray.ToVector4(),
                 "下次进入南征或北征并等待角色就绪后开启一次；需要保持 BOCCHI 启用。");
         }
@@ -45,7 +45,7 @@ internal sealed partial class OccultPotFeature
                 config.Save(this);
             }
 
-            ImGui.TextColored(
+            Plugin.DrawColoredWrapped(
                 KnownColor.Gray.ToVector4(),
                 "填写 DailyRoutines「自动丢弃物品」中的物品组名称；下次进入南征或北征时运行一次。\n" +
                 "DailyRoutines 及其自动丢弃物品模块需要保持启用。");

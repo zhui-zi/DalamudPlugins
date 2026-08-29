@@ -152,7 +152,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
 
         if (aetherytes.Count == 0)
         {
-            ImGui.TextDisabled("当前地形没有可供解锁的水晶!");
+            Plugin.DrawDisabledWrapped("当前地形没有可供解锁的水晶!");
             return;
         }
 
@@ -207,7 +207,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
 
         if (aetherCurrents.Count == 0)
         {
-            ImGui.TextDisabled("当前地形没有可供解锁的风脉泉!");
+            Plugin.DrawDisabledWrapped("当前地形没有可供解锁的风脉泉!");
             return;
         }
 
@@ -242,7 +242,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
     {
         if (advancedToolsFeature == null)
         {
-            ImGui.TextDisabled("远程摸点当前不可用，请检查 Dalamud 日志。");
+            Plugin.DrawDisabledWrapped("远程摸点当前不可用，请检查 Dalamud 日志。");
         }
         else
         {
@@ -293,7 +293,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
         {
             case RivalWingsTerritoryId:
                 ImGui.TextUnformatted("大草原");
-                ImGui.TextDisabled("点击按钮快速触摸对应点位");
+                Plugin.DrawDisabledWrapped("点击按钮快速触摸对应点位");
                 for (var index = 1; index <= 13; index++)
                 {
                     if (ImGui.Button($"{index}##RivalWingsPoint-{index}"))
@@ -309,7 +309,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
                 break;
             case ShatterTerritoryId:
                 ImGui.TextUnformatted("尘封秘岩");
-                ImGui.TextDisabled("点击按钮快速触摸对应点位");
+                Plugin.DrawDisabledWrapped("点击按钮快速触摸对应点位");
                 for (var index = 0; index < ShatterPoints.Length; index++)
                 {
                     var point = ShatterPoints[index];
@@ -325,9 +325,9 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
                     TouchAllBattlefieldPoints();
                 break;
             default:
-                ImGui.TextDisabled("PVP 摸点仅在以下地图可用:");
-                ImGui.TextDisabled("- 尘封秘岩 (431)");
-                ImGui.TextDisabled("- 大草原 (888)");
+                Plugin.DrawDisabledWrapped("PVP 摸点仅在以下地图可用:");
+                Plugin.DrawDisabledWrapped("- 尘封秘岩 (431)");
+                Plugin.DrawDisabledWrapped("- 大草原 (888)");
                 break;
         }
     }

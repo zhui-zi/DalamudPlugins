@@ -315,7 +315,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
         if (Plugin.Config.Advanced.DeepDungeonZOffsetMode &&
             (normalMovementHook == null || combatMovementHook == null))
         {
-            ImGui.TextDisabled("当前游戏版本无法使用死宫特供模式。");
+            Plugin.DrawDisabledWrapped("当前游戏版本无法使用死宫特供模式。");
         }
     }
 
@@ -335,7 +335,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
         if (ImGui.Button("传送到鼠标位置", new Vector2(-1f, 0f)))
             ArmMouseTeleport();
         if (mouseTeleportArmed)
-            ImGui.TextColored(new Vector4(0.35f, 0.85f, 1f, 1f), "选点中：左键传送，右键取消。");
+            Plugin.DrawColoredWrapped(new Vector4(0.35f, 0.85f, 1f, 1f), "选点中：左键传送，右键取消。");
         else
             Plugin.DrawHelp("点击后左键选点；也可用 /ktb mouse 传送到当前鼠标位置。");
 
@@ -431,9 +431,9 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
     private void DrawDiveServiceStatus(string featureName)
     {
         if (diveTeleportHook == null)
-            ImGui.TextDisabled($"{featureName}当前不可用：游戏版本不受支持。");
+            Plugin.DrawDisabledWrapped($"{featureName}当前不可用：游戏版本不受支持。");
         else if (diveTeleportContext == nint.Zero)
-            ImGui.TextDisabled($"{featureName}正在等待游戏环境初始化。");
+            Plugin.DrawDisabledWrapped($"{featureName}正在等待游戏环境初始化。");
     }
 
     private static bool Enabled(Func<AdvancedToolsSettings, bool> selector) =>

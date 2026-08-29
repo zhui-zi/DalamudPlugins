@@ -154,7 +154,7 @@ internal sealed class VerificationMonitorFeature : IDisposable
         if (lastRefreshAt != DateTimeOffset.MinValue)
         {
             ImGui.SameLine();
-            ImGui.TextDisabled($"上次刷新：{lastRefreshAt:HH:mm:ss}");
+            Plugin.DrawDisabledWrapped($"上次刷新：{lastRefreshAt:HH:mm:ss}");
         }
 
         ImGui.Separator();
@@ -185,7 +185,7 @@ internal sealed class VerificationMonitorFeature : IDisposable
             return;
         }
 
-        ImGui.TextWrapped(
+        Plugin.DrawWrapped(
             "第一列打开插件设置；右侧 Discord 按钮会优先唤起客户端，客户端不可用时改用浏览器打开。");
         ImGui.Separator();
 
@@ -222,17 +222,17 @@ internal sealed class VerificationMonitorFeature : IDisposable
             }
             else
             {
-                ImGui.TextDisabled("请在插件设置内验证");
+                Plugin.DrawDisabledWrapped("请在插件设置内验证");
             }
 
             var state = states.FirstOrDefault(current => current.Target == target);
             if (state == null)
             {
-                ImGui.TextDisabled("尚未刷新");
+                Plugin.DrawDisabledWrapped("尚未刷新");
             }
             else
             {
-                ImGui.TextColored(
+                Plugin.DrawColoredWrapped(
                     GetStatusColor(state),
                     FormatState(state, true));
             }
@@ -302,7 +302,7 @@ internal sealed class VerificationMonitorFeature : IDisposable
 
     private static void DrawState(VerificationState state)
     {
-        ImGui.TextColored(
+        Plugin.DrawColoredWrapped(
             GetStatusColor(state),
             $"{state.Target.DisplayName,-16} {FormatState(state, true)}");
     }

@@ -85,7 +85,7 @@ internal sealed class AeAssistStartupFeature : IDisposable
             Plugin.Config.Save();
         }
 
-        ImGui.TextWrapped($"当前状态：{status}");
+        Plugin.DrawWrapped($"当前状态：{status}");
         if (ImGui.Button("立即重试"))
             Restart();
 

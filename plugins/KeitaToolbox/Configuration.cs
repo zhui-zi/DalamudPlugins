@@ -11,6 +11,7 @@ namespace KeitaToolbox;
 public sealed class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 6;
+    public bool DisclaimerAccepted { get; set; }
     public bool ProtectedFeaturesUnlocked { get; set; }
     public string AnonymousInstallId { get; set; } = string.Empty;
     public long LastUsageUnixSeconds { get; set; }

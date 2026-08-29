@@ -55,18 +55,19 @@ public sealed partial class Plugin : IDalamudPlugin
     internal static bool ProtectedFeaturesUnlocked =>
         !PasswordProtectionEnabled || Config.ProtectedFeaturesUnlocked;
 
-    private readonly BasicFeatures? basicFeatures;
-    private readonly AutoInviteFeature? autoInviteFeature;
-    private readonly AutoLeaveFeature? autoLeaveFeature;
-    private readonly AutoRefuseTradeFeature? autoRefuseTradeFeature;
-    private readonly PortraitGearSyncFeature? portraitFeature;
-    private readonly AdvancedToolsFeature? advancedToolsFeature;
-    private readonly MapGearsetFeature? mapGearsetFeature;
-    private readonly OccultPotFeature? occultPotFeature;
-    private readonly VoidAetherFeature? voidAetherFeature;
-    private readonly AeAssistStartupFeature? aeAssistStartupFeature;
-    private readonly VerificationMonitorFeature? verificationMonitorFeature;
-    private readonly bool omenServicesInitialized;
+    private BasicFeatures? basicFeatures;
+    private AutoInviteFeature? autoInviteFeature;
+    private AutoLeaveFeature? autoLeaveFeature;
+    private AutoRefuseTradeFeature? autoRefuseTradeFeature;
+    private PortraitGearSyncFeature? portraitFeature;
+    private AdvancedToolsFeature? advancedToolsFeature;
+    private MapGearsetFeature? mapGearsetFeature;
+    private OccultPotFeature? occultPotFeature;
+    private VoidAetherFeature? voidAetherFeature;
+    private AeAssistStartupFeature? aeAssistStartupFeature;
+    private VerificationMonitorFeature? verificationMonitorFeature;
+    private bool omenServicesInitialized;
+    private bool runtimeInitialized;
     private readonly HttpClient unlockClient = new()
     {
         Timeout = TimeSpan.FromSeconds(10),
@@ -91,6 +92,31 @@ public sealed partial class Plugin : IDalamudPlugin
         if (Config.Migrate())
             Config.Save();
 
+        windowOpen = !Config.DisclaimerAccepted;
+        PluginInterface.UiBuilder.Draw += DrawWindow;
+        PluginInterface.UiBuilder.OpenConfigUi += OpenWindow;
+        PluginInterface.UiBuilder.OpenMainUi += OpenWindow;
+        CommandManager.AddHandler(Command, new CommandInfo(OnCommand)
+        {
+            HelpMessage = "打开 Keita 工具箱设置。",
+        });
+        CommandManager.AddHandler(ShortCommand, new CommandInfo(OnCommand)
+        {
+            HelpMessage = "打开 Keita 工具箱设置。",
+        });
+
+        if (Config.DisclaimerAccepted)
+            InitializeRuntime();
+
+        Log.Information("Keita Toolbox loaded.");
+    }
+
+    private void InitializeRuntime()
+    {
+        if (runtimeInitialized || disposeState != 0)
+            return;
+
+        runtimeInitialized = true;
         try
         {
             DService.Init(PluginInterface, () => new DServiceInitOptions());
@@ -134,18 +160,6 @@ public sealed partial class Plugin : IDalamudPlugin
 
         Framework.Update += OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw += DrawFloatingButton;
-        PluginInterface.UiBuilder.Draw += DrawWindow;
-        PluginInterface.UiBuilder.OpenConfigUi += OpenWindow;
-        PluginInterface.UiBuilder.OpenMainUi += OpenWindow;
-        CommandManager.AddHandler(Command, new CommandInfo(OnCommand)
-        {
-            HelpMessage = "打开 Keita 工具箱设置。",
-        });
-        CommandManager.AddHandler(ShortCommand, new CommandInfo(OnCommand)
-        {
-            HelpMessage = "打开 Keita 工具箱设置。",
-        });
-
         usageTask = SendUsageAsync(usageCancellation.Token);
         Log.Information("Keita Toolbox enabled.");
     }
@@ -221,6 +235,12 @@ public sealed partial class Plugin : IDalamudPlugin
 
     private void OnCommand(string _, string arguments)
     {
+        if (!Config.DisclaimerAccepted)
+        {
+            windowOpen = true;
+            return;
+        }
+
         var trimmed = arguments.Trim();
         if (trimmed.StartsWith("autoinvite", StringComparison.OrdinalIgnoreCase))
         {

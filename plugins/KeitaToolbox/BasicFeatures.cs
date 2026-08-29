@@ -961,7 +961,7 @@ internal sealed unsafe class BasicFeatures : IDisposable
         ImGui.SetNextItemWidth(320);
         ImGui.InputText($"搜索##{id}", ref search, 128);
         ImGui.SameLine();
-        ImGui.TextDisabled($"已选择 {selected.Count} 项");
+        Plugin.DrawDisabledWrapped($"已选择 {selected.Count} 项");
         ImGui.SameLine();
         var selectedOnly = dutySelectedOnly.GetValueOrDefault(id);
         if (ImGui.Checkbox($"仅显示已选##{id}", ref selectedOnly))

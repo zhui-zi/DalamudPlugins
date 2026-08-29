@@ -128,11 +128,11 @@ internal sealed unsafe partial class AdvancedToolsFeature
 
         Plugin.DrawHelp(GetKnockbackModeDescription(Plugin.Config.Advanced.AntiKnockbackMode));
         if (antiKnockbackHook == null)
-            ImGui.TextDisabled("当前游戏版本无法处理强制位移。");
+            Plugin.DrawDisabledWrapped("当前游戏版本无法处理强制位移。");
         else if (knockbackSpeedHook == null &&
                  Plugin.Config.Advanced.AntiKnockbackMode is
                      KnockbackHandlingMode.Fast or KnockbackHandlingMode.Instant)
-            ImGui.TextDisabled("当前游戏版本无法调整强制位移完成时间。");
+            Plugin.DrawDisabledWrapped("当前游戏版本无法调整强制位移完成时间。");
     }
 
     private void DrawJumpRestrictionSettings()
@@ -143,7 +143,7 @@ internal sealed unsafe partial class AdvancedToolsFeature
             value => Plugin.Config.Advanced.JumpRestrictionImmunity = value);
         Plugin.DrawHelp("阻止状态或场地设置本地禁止跳跃标记。");
         if (jumpRestrictionHook == null)
-            ImGui.TextDisabled("当前游戏版本无法使用跳跃限制免疫。");
+            Plugin.DrawDisabledWrapped("当前游戏版本无法使用跳跃限制免疫。");
     }
 
     private void DrawLocalFlightSettings()
@@ -154,7 +154,7 @@ internal sealed unsafe partial class AdvancedToolsFeature
             value => Plugin.Config.Advanced.LocalFlight = value);
         Plugin.DrawHelp("移除当前区域的本地飞行判定限制。");
         if (localFlightHook == null)
-            ImGui.TextDisabled("当前游戏版本无法使用本地飞行模式。");
+            Plugin.DrawDisabledWrapped("当前游戏版本无法使用本地飞行模式。");
     }
 
     private void DrawImmediateSprintSettings()
@@ -165,7 +165,7 @@ internal sealed unsafe partial class AdvancedToolsFeature
             value => Plugin.Config.Advanced.ImmediateSprint = value);
         Plugin.DrawHelp("直接发送冲刺动作并跳过普通冷却限制。");
         if (!immediateSprintRegistered)
-            ImGui.TextDisabled("即刻冲刺服务当前不可用。");
+            Plugin.DrawDisabledWrapped("即刻冲刺服务当前不可用。");
     }
 
     private void DrawHeartbeatSettings()
@@ -187,7 +187,7 @@ internal sealed unsafe partial class AdvancedToolsFeature
         }
 
         if (heartbeatPatch is not { IsValid: true })
-            ImGui.TextDisabled("当前游戏版本无法使用保持心电图。");
+            Plugin.DrawDisabledWrapped("当前游戏版本无法使用保持心电图。");
     }
 
     private void UpdateSystemUtilityStates(bool protectionUnlocked)

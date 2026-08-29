@@ -800,7 +800,7 @@ internal sealed partial class OccultPotFeature : IDisposable
             if (!config.UseOnlineTracker && config.EnableArchivist)
             {
                 ImGui.SameLine();
-                ImGui.TextColored(KnownColor.Orange.ToVector4(), "警告: 请先开启“从在线追踪器同步”功能");
+                Plugin.DrawColoredWrapped(KnownColor.Orange.ToVector4(), "警告: 请先开启“从在线追踪器同步”功能");
             }
 
             using (ImRaii.Disabled(!config.EnableArchivist || !config.UseOnlineTracker))
@@ -895,7 +895,7 @@ internal sealed partial class OccultPotFeature : IDisposable
     private void ConfigUIAutoDig()
     {
         ImGui.Spacing();
-        ImGui.TextColored(KnownColor.OrangeRed.ToVector4(), "实验性功能，可能存在未知问题和封号风险，请自行承担风险");
+        Plugin.DrawColoredWrapped(KnownColor.OrangeRed.ToVector4(), "实验性功能，可能存在未知问题和封号风险，请自行承担风险");
         using (ImRaii.PushIndent())
         {
             if (ImGui.Checkbox("启用全自动挖罐", ref config.EnableAutoDig))
@@ -933,19 +933,19 @@ internal sealed partial class OccultPotFeature : IDisposable
                 }
                 if (DangerZoneHandling == DangerZoneHandlingMode.Underground)
                 {
-                    ImGui.TextColored(KnownColor.Orange.ToVector4(),
+                    Plugin.DrawColoredWrapped(KnownColor.Orange.ToVector4(),
                         "进入危险候选后按 DR 方式拦截位置更新；地下位置跟随当地地表并保持约 20 星码深度，最低 Y=-5。找到箱子后短暂回地面读条，完成即遁回地下。");
-                    ImGui.TextColored(KnownColor.Red.ToVector4(),
+                    Plugin.DrawColoredWrapped(KnownColor.Red.ToVector4(),
                         "警告：无法隐藏撒娇罐，可能会引起绿玩惊诧。");
-                    ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                    Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(),
                         $"遁地寻宝测试：/ktb {UndergroundTestCommand} [on|off]\n" +
                         "需在新月岛野外、非战斗状态使用；再次执行或使用 off 可安全退出。");
                 }
                 else if (DangerZoneHandling == DangerZoneHandlingMode.Skip)
-                    ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                    Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(),
                         "遇到危险区时自动取消身上的撒娇罐 Buff，并结束本轮挖罐。");
                 else if (DangerZoneHandling == DangerZoneHandlingMode.Ground)
-                    ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                    Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(),
                         "北征寻宝移动会动态绕开同级或更高探索等级普通怪的仇恨圈。");
                 using (ImRaii.Disabled(DangerZoneHandling != DangerZoneHandlingMode.Manual))
                 {
@@ -967,7 +967,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                         if (ImGui.Checkbox("仅死亡 3 分钟仍无人施救时返回", ref config.AutoDigWaitForRescue))
                             config.Save(this);
                         if (config.AutoDigWaitForRescue)
-                            ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                            Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(),
                                 "等待施救期间不发送罐子通知、语音或聊天消息；开始自动返回后恢复通知。");
                     }
                 }
@@ -1007,14 +1007,11 @@ internal sealed partial class OccultPotFeature : IDisposable
                         "选择刷新最短且 >5 分钟的大区；岛内剩余不足 90 分钟且有可用目标时强制选择其他大区；需启用 /pdrfe 和 /pdr worldtravel；跨区有崩游戏风险。",
                     _ => "每轮挖罐完成后返回当前岛起始点并待命。"
                 };
-                var wrapPosition = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
-                ImGui.PushTextWrapPos(wrapPosition);
-                ImGui.TextColored(
+                Plugin.DrawColoredWrapped(
                     config.AutoDigRunMode == AutoDigRunMode.CrossDataCenter
                         ? KnownColor.Orange.ToVector4()
                         : KnownColor.Gray.ToVector4(),
                     runModeDescription);
-                ImGui.PopTextWrapPos();
 
                 ConfigSection("自动寻宝");
                 if (ImGui.Checkbox("宝箱达到数量时自动寻宝", ref config.EnableCofferHunt))
@@ -1054,7 +1051,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                             config.Save(this);
                         }
 
-                        ImGui.TextColored(KnownColor.Gray.ToVector4(),
+                        Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(),
                             $"BOCCHI 自动使用魔寻宝后，仅在白银达到 {CofferHuntSilverCap} 或青铜达到 {CofferHuntBronzeCap}，且下个罐子 > 10 分钟时开启。\n" +
                             (config.CofferHuntExecutor == CofferHuntExecutor.DailyRoutines
                                  ? $"DailyRoutines 每次随机选择内环或外环，仅运行其中一条。传送到非起始点魔路水晶后，仅在周围 {CofferHuntPlayerAvoidanceRadius:0} yalms 无其他玩家时启动，发现玩家则换水晶重试。\n" +
@@ -1068,7 +1065,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                 if (autoDigActive)
                 {
                     ConfigSection("运行状态");
-                    ImGui.TextColored(KnownColor.LawnGreen.ToVector4(), "自动挖罐运行中…");
+                    Plugin.DrawColoredWrapped(KnownColor.LawnGreen.ToVector4(), "自动挖罐运行中…");
                     if (ImGui.Button("立即停止"))
                         AbortAutoDig();
                 }
@@ -1123,7 +1120,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                 }
             }
 
-            ImGui.TextColored(KnownColor.Gray.ToVector4(),
+            Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(),
                 "依据当前岛的魔法罐倒计提前切换；FATE 结束或离开后恢复原辅助职业。");
         }
 
@@ -1137,7 +1134,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                     RestoreBmrAiAfterPotFate();
             }
 
-            ImGui.TextColored(KnownColor.Gray.ToVector4(),
+            Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(),
                 "进入魔法罐 FATE 的圆形区域后持续关闭 Bossmod Reborn AI。\n" +
                 "离开或 FATE 结束时，仅恢复由本功能关闭且进入前原本开启的 AI。\n" +
                 "AI 关闭时复用 BMR 移动输入靠近选中目标；手动移动和 BMR 机制移动优先。");
@@ -1204,14 +1201,14 @@ internal sealed partial class OccultPotFeature : IDisposable
             }
 
             if (busy)
-                ImGui.TextColored(KnownColor.LightSkyBlue.ToVector4(), "兑换队列处理中…");
+                Plugin.DrawColoredWrapped(KnownColor.LightSkyBlue.ToVector4(), "兑换队列处理中…");
             else if (!canExchange)
-                ImGui.TextColored(KnownColor.Gray.ToVector4(), unavailableReason);
+                Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(), unavailableReason);
             else if (!hasAffordableCurrency)
-                ImGui.TextColored(KnownColor.Gray.ToVector4(), "当前货币不足一次兑换。");
+                Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(), "当前货币不足一次兑换。");
 
             if (!string.IsNullOrWhiteSpace(currencyExchangeStatus))
-                ImGui.TextWrapped(currencyExchangeStatus);
+                Plugin.DrawWrapped(currencyExchangeStatus);
         }
     }
 
@@ -1341,7 +1338,7 @@ internal sealed partial class OccultPotFeature : IDisposable
                              : autoDigRetryFor == nextSpawnTime && Environment.TickCount64 < autoDigRetryAt
                              ? "准备重试"
                              : "待命";
-            ImGui.TextColored(KnownColor.Gray.ToVector4(), $"自动挖罐: {status}");
+            Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(), $"自动挖罐: {status}");
         }
 
         ImGui.Separator();

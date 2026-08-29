@@ -1,11 +1,14 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Utility;
 
 namespace KeitaToolbox;
 
 public sealed partial class Plugin
 {
+    private const string ProjectUrl = "https://github.com/zhui-zi/DalamudPlugins";
+
     private enum SettingsPage
     {
         DutyFlow,
@@ -15,6 +18,7 @@ public sealed partial class Plugin
         CombatAndStatus,
         OccultCrescent,
         Integrations,
+        About,
     }
 
     private SettingsPage selectedSettingsPage = SettingsPage.DutyFlow;
@@ -23,6 +27,12 @@ public sealed partial class Plugin
 
     private void DrawWindow()
     {
+        if (!Config.DisclaimerAccepted)
+        {
+            DrawDisclaimerWindow();
+            return;
+        }
+
         if (!windowOpen)
             return;
 
@@ -33,7 +43,7 @@ public sealed partial class Plugin
             return;
         }
 
-        ImGui.TextDisabled("选择左侧分类查看功能；修改后会立即保存。");
+        DrawDisabledWrapped("选择左侧分类查看功能；修改后会立即保存。");
         ImGui.Separator();
         ImGui.Spacing();
 
@@ -42,7 +52,7 @@ public sealed partial class Plugin
                 new Vector2(190f, 0f),
                 true))
         {
-            ImGui.TextDisabled("设置分类");
+            DrawDisabledWrapped("设置分类");
             ImGui.Separator();
             ImGui.Spacing();
             DrawNavigationItem(SettingsPage.DutyFlow, "副本流程");
@@ -52,6 +62,8 @@ public sealed partial class Plugin
             DrawNavigationItem(SettingsPage.CombatAndStatus, "战斗与状态");
             DrawNavigationItem(SettingsPage.OccultCrescent, "新月岛");
             DrawNavigationItem(SettingsPage.Integrations, "插件联动");
+            ImGui.Spacing();
+            DrawNavigationItem(SettingsPage.About, "关于");
         }
         ImGui.EndChild();
 
@@ -158,6 +170,9 @@ public sealed partial class Plugin
                     verificationMonitorFeature.DrawSettings();
                 }
                 break;
+            case SettingsPage.About:
+                DrawAboutPage();
+                break;
         }
     }
 
@@ -184,8 +199,76 @@ public sealed partial class Plugin
         SettingsPage.Integrations => (
             "插件联动",
             "管理外部插件启动、自动切换、参数同步与验证监控。"),
+        SettingsPage.About => (
+            "关于",
+            "查看项目地址、免责声明与开源许可。"),
         _ => throw new ArgumentOutOfRangeException(nameof(page), page, null),
     };
+    private void DrawDisclaimerWindow()
+    {
+        ImGui.SetNextWindowSize(new Vector2(620f, 390f), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin(
+                "Keita 工具箱使用须知###KeitaToolboxDisclaimer",
+                ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings))
+        {
+            ImGui.End();
+            return;
+        }
+        ImGui.TextUnformatted("免责声明");
+        ImGui.Separator();
+        ImGui.Spacing();
+        DrawWrapped(
+            "Keita 工具箱是第三方 Dalamud 插件，包含自动化、移动、战斗及系统相关功能。使用第三方工具可能违反游戏服务条款，并可能导致账号处罚、数据损坏、游戏崩溃或其他损失。");
+        ImGui.Spacing();
+        DrawWrapped(
+            "本项目按“原样”提供，不作任何明示或默示保证。使用者应自行了解并承担全部风险；作者及贡献者不对因使用本插件产生的任何索赔、损害或其他责任负责。");
+        ImGui.Spacing();
+        DrawWrapped("项目地址：");
+        DrawProjectLink();
+        ImGui.Spacing();
+        DrawWrapped("KeitaToolbox 源代码采用 MIT License 开源，随附的第三方组件适用其各自的许可证。完整许可文本见项目仓库中的 LICENSE 文件。");
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+        DrawWrapped("点击“同意并继续”即表示你已阅读、理解并接受以上内容。");
+        ImGui.Spacing();
+        var buttonWidth = 160f;
+        ImGui.SetCursorPosX(Math.Max(ImGui.GetCursorPosX(), (ImGui.GetWindowWidth() - buttonWidth) / 2f));
+        if (ImGui.Button("同意并继续", new Vector2(buttonWidth, 0f)))
+        {
+            Config.DisclaimerAccepted = true;
+            Config.Save();
+            InitializeRuntime();
+            windowOpen = true;
+        }
+        ImGui.End();
+    }
+    private static void DrawAboutPage()
+    {
+        if (ImGui.CollapsingHeader("项目", ImGuiTreeNodeFlags.DefaultOpen))
+            DrawProjectLink();
+
+        ImGui.Spacing();
+        if (ImGui.CollapsingHeader("免责声明", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            DrawWrapped(
+                "本插件按“原样”提供，不作任何明示或默示保证。使用者自行承担使用第三方插件及相关功能的全部风险，作者及贡献者不对由此产生的任何索赔、损害或其他责任负责。");
+        }
+
+        ImGui.Spacing();
+        if (ImGui.CollapsingHeader("开源许可", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            DrawWrapped("KeitaToolbox 源代码采用 MIT License 开源，随附的第三方组件适用其各自的许可证。完整许可文本见项目仓库中的 LICENSE 文件。");
+        }
+    }
+
+    private static void DrawProjectLink()
+    {
+        if (ImGui.Selectable(ProjectUrl, false))
+            Util.OpenLink(ProjectUrl);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("点击打开 GitHub 项目主页");
+    }
 
     internal static bool DrawFeatureToggle(string label, bool value, Action<bool> setter)
     {
@@ -206,13 +289,27 @@ public sealed partial class Plugin
         ImGui.Spacing();
     }
 
-    private static void DrawDisabledWrapped(string text)
+    internal static void DrawDisabledWrapped(string text)
     {
         var wrapPosition = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
         ImGui.PushTextWrapPos(wrapPosition);
-        ImGui.TextDisabled(text);
+        ImGui.TextDisabled(PreservePhraseSpacing(text));
         ImGui.PopTextWrapPos();
     }
+
+    internal static void DrawColoredWrapped(Vector4 color, string text)
+    {
+        var wrapPosition = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
+        ImGui.PushTextWrapPos(wrapPosition);
+        ImGui.TextColored(color, PreservePhraseSpacing(text));
+        ImGui.PopTextWrapPos();
+    }
+
+    internal static void DrawWrapped(string text) =>
+        ImGui.TextWrapped(PreservePhraseSpacing(text));
+
+    private static string PreservePhraseSpacing(string text) =>
+        text.Contains(' ') ? text.Replace(' ', '\u00a0') : text;
 
     private static void DrawFloatingButtonSettings()
     {
@@ -253,7 +350,7 @@ public sealed partial class Plugin
                 ImGuiTreeNodeFlags.DefaultOpen))
             return false;
 
-        ImGui.TextWrapped(
+        DrawWrapped(
             "首次输入工具箱密码即可解锁本机的受保护功能，后续无需再次输入。");
         ImGui.SetNextItemWidth(300f);
         var submitted = ImGui.InputText(
@@ -274,9 +371,9 @@ public sealed partial class Plugin
         if (!ProtectedFeaturesUnlocked)
         {
             if (unlockTask != null)
-                ImGui.TextDisabled("正在验证……");
+                DrawDisabledWrapped("正在验证……");
             else if (unlockError.Length > 0)
-                ImGui.TextColored(new Vector4(1f, 0.35f, 0.35f, 1f), unlockError);
+                DrawColoredWrapped(new Vector4(1f, 0.35f, 0.35f, 1f), unlockError);
             DrawHelp("密码通过 HTTPS 验证且不会保存，本地仅记录验证成功状态。");
         }
 
@@ -299,5 +396,5 @@ public sealed partial class Plugin
     }
 
     private static void DrawUnavailable(string name) =>
-        ImGui.TextDisabled($"{name}当前不可用，请检查 Dalamud 日志。");
+        DrawDisabledWrapped($"{name}当前不可用，请检查 Dalamud 日志。");
 }

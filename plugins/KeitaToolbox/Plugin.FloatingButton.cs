@@ -15,7 +15,7 @@ public sealed partial class Plugin
 
     private void DrawFloatingButton()
     {
-        if (!Config.Interface.ShowFloatingButton)
+        if (!Config.DisclaimerAccepted || !Config.Interface.ShowFloatingButton)
         {
             floatingButtonDragging = false;
             return;
