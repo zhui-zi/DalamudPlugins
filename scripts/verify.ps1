@@ -31,6 +31,72 @@ try
         --no-incremental
     Assert-LastExitCode 'Plugin build'
 
+    $project = [xml](Get-Content -LiteralPath 'plugins\KeitaToolbox\KeitaToolbox.csproj' -Raw)
+    $projectVersion = [string]$project.Project.PropertyGroup.Version
+    $repoManifest = Get-Content -LiteralPath 'pluginmaster.json' -Raw | ConvertFrom-Json
+    $repoVersion = [string]($repoManifest |
+        Where-Object InternalName -eq 'KeitaToolbox').AssemblyVersion
+    $buildDirectory = 'plugins\KeitaToolbox\bin\Release'
+    $buildDll = Join-Path $buildDirectory 'KeitaToolbox.dll'
+    $packagePath = Join-Path $buildDirectory 'KeitaToolbox\latest.zip'
+    $dllVersion = [System.Reflection.AssemblyName]::GetAssemblyName(
+        (Resolve-Path -LiteralPath $buildDll)).Version.ToString()
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $package = [System.IO.Compression.ZipFile]::OpenRead(
+        (Resolve-Path -LiteralPath $packagePath))
+    try
+    {
+        $manifestEntry = $package.Entries |
+            Where-Object FullName -eq 'KeitaToolbox.json'
+        $dllEntry = $package.Entries |
+            Where-Object FullName -eq 'KeitaToolbox.dll'
+        if ($null -eq $manifestEntry -or $null -eq $dllEntry)
+        {
+            throw 'Release package is missing its manifest or plugin DLL.'
+        }
+
+        $manifestReader = [System.IO.StreamReader]::new($manifestEntry.Open())
+        try
+        {
+            $packageVersion = [string](
+                $manifestReader.ReadToEnd() | ConvertFrom-Json).AssemblyVersion
+        }
+        finally
+        {
+            $manifestReader.Dispose()
+        }
+
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $dllStream = $dllEntry.Open()
+        try
+        {
+            $packageDllHash = [Convert]::ToHexString(
+                $sha256.ComputeHash($dllStream))
+        }
+        finally
+        {
+            $dllStream.Dispose()
+            $sha256.Dispose()
+        }
+    }
+    finally
+    {
+        $package.Dispose()
+    }
+
+    $buildDllHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $buildDll).Hash
+    if ($projectVersion -ne $repoVersion -or
+        $projectVersion -ne $dllVersion -or
+        $projectVersion -ne $packageVersion)
+    {
+        throw "Release version mismatch: project=$projectVersion repo=$repoVersion DLL=$dllVersion package=$packageVersion."
+    }
+    if ($buildDllHash -ne $packageDllHash)
+    {
+        throw 'Release package DLL does not match the build output.'
+    }
+
     & dotnet test `
         --project 'tests\KeitaToolbox.CoreChecks\KeitaToolbox.CoreChecks.csproj' `
         --configuration Release `
