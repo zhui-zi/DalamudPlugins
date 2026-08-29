@@ -1,0 +1,22 @@
+{
+  "Author": "zhui-zi",
+  "Name": "Mortal MJ Plugin",
+  "InternalName": "MortalMJPlugin",
+  "AssemblyVersion": "1.0.0.1",
+  "Description": "使用内置 Mortal AI 自动进行多玛方城战。",
+  "ApplicableVersion": "any",
+  "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
+  "Tags": [
+    "mahjong",
+    "mortal",
+    "ai",
+    "automation"
+  ],
+  "DalamudApiLevel": 15,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": false,
+  "LoadPriority": 0,
+  "Punchline": "内置 Mortal AI 自动打麻将。",
+  "AcceptsFeedback": false
+}
