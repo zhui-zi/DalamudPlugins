@@ -30,5 +30,35 @@
     "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip"
+  },
+  {
+    "Author": "doomzao, zhui-zi",
+    "Name": "凯夫卡的面具",
+    "InternalName": "MaskOfKefka",
+    "AssemblyVersion": "0.2.0.1",
+    "Description": "为 OBS 创建独立的纯净游戏输出窗口，不显示 ImGui 或 Dalamud 浮层；也可选择仅输出游戏场景并隐藏游戏界面。",
+    "ApplicableVersion": "any",
+    "RepoUrl": "https://github.com/zhui-zi/mask-of-kefka",
+    "IconUrl": "https://raw.githubusercontent.com/zhui-zi/mask-of-kefka/main/images/icon.png",
+    "Tags": [
+      "streaming",
+      "obs",
+      "overlay",
+      "utility"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "创建不显示 Dalamud 浮层的独立游戏输出窗口。",
+    "AcceptsFeedback": true,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadCount": 0,
+    "LastUpdate": 1787989003,
+    "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/MaskOfKefka/latest.zip",
+    "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/MaskOfKefka/latest.zip",
+    "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/MaskOfKefka/latest.zip"
   }
 ]
