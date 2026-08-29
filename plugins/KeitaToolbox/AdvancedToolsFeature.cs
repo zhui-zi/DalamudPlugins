@@ -19,7 +19,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
     private const int DiveTeleportOpcode = 991;
 
     private const string SpeedSignature =
-        "40 ?? 48 ?? ?? ?? 48 ?? ?? 48 ?? ?? ?? 48 ?? ?? FF 90 ?? ?? ?? ?? 48 ?? ?? 75 ?? F3 ?? ?? ?? ?? ?? ?? ??";
+        "40 57 48 83 EC ?? 48 8B F9 48 8B 49 ?? 48 8B 01 FF 90 ?? ?? ?? ?? 48 85 C0 75";
     private const string MovePermissionSignature =
         "E8 ?? ?? ?? ?? 84 ?? 74 ?? 48 C7 05";
     private const string SkillPostActionMoveSignature =
@@ -198,6 +198,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
     public void DrawMovementAndSystemSettings()
     {
         DrawMovementControlSettings();
+        DrawPartyBuffSettings();
         DrawActionAndDisplacementSettings();
         DrawPositionAndExplorationSettings();
         DrawSystemStateSettings();
@@ -216,12 +217,30 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
             value => Plugin.Config.Advanced.SpeedHack = value);
         if (Plugin.Config.Advanced.SpeedHack)
         {
-            var value = Plugin.Config.Advanced.SpeedValue;
-            if (ImGui.DragFloat("速度加成", ref value, 0.01f, 0f, 1f, "%.2f"))
+            Plugin.DrawHelp("优先级：战斗中 → 周围有玩家 → 默认；小于等于 0 表示跳过该规则。");
+            DrawSpeedRuleSettings("副本规则", Plugin.Config.Advanced.DutySpeed, "Duty");
+            DrawSpeedRuleSettings("默认规则", Plugin.Config.Advanced.NormalSpeed, "Normal");
+
+            var territoryId = Plugin.ClientState.TerritoryType;
+            var useZoneRule = Plugin.Config.Advanced.ZoneSpeeds.ContainsKey(territoryId);
+            if (territoryId != 0 && ImGui.Checkbox("当前区域使用独立规则", ref useZoneRule))
             {
-                Plugin.Config.Advanced.SpeedValue = Math.Clamp(value, 0f, 1f);
+                if (useZoneRule)
+                    Plugin.Config.Advanced.ZoneSpeeds[territoryId] = new SpeedRuleSettings();
+                else
+                    Plugin.Config.Advanced.ZoneSpeeds.Remove(territoryId);
                 Plugin.Config.Save();
             }
+
+            if (territoryId != 0 &&
+                Plugin.Config.Advanced.ZoneSpeeds.TryGetValue(territoryId, out var zoneRule))
+            {
+                DrawSpeedRuleSettings($"区域 {territoryId}", zoneRule, $"Zone{territoryId}");
+            }
+
+            Plugin.DrawColoredWrapped(
+                new Vector4(0.35f, 0.85f, 1f, 1f),
+                $"当前移动倍率：{lastSpeedMultiplier:0.##}×");
         }
 
         DrawToggle(
@@ -337,10 +356,12 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
         if (mouseTeleportArmed)
             Plugin.DrawColoredWrapped(new Vector4(0.35f, 0.85f, 1f, 1f), "选点中：左键传送，右键取消。");
         else
-            Plugin.DrawHelp("点击后左键选点；也可用 /ktb mouse 传送到当前鼠标位置。");
+            Plugin.DrawHelp("点击后左键选点；命令会传送到当前鼠标位置。");
+        Plugin.DrawCommandHelp("/ktb mouse");
 
         if (ImGui.Button("传送到地图旗标", new Vector2(-1f, 0f)))
             TeleportToFlag();
+        Plugin.DrawCommandHelp("/ktb flag");
 
         DrawDiveServiceStatus("位置传送");
     }
@@ -378,7 +399,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
 
         if (ImGui.Button("触发无敌", new Vector2(-1f, 0f)))
             TriggerInvincibility();
-        Plugin.DrawHelp("也可使用 /ktb invincible。");
+        Plugin.DrawCommandHelp("/ktb invincible");
         DrawDiveServiceStatus("触发无敌");
     }
 
@@ -443,9 +464,14 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
     private float SpeedDetour(nint arg1)
     {
         var original = speedHook!.Original(arg1);
-        return Enabled(settings => settings.SpeedHack)
-            ? original + Plugin.Config.Advanced.SpeedValue
-            : original;
+        if (!Enabled(settings => settings.SpeedHack))
+        {
+            lastSpeedMultiplier = original;
+            return original;
+        }
+
+        lastSpeedMultiplier = original * SelectSpeedMultiplier();
+        return lastSpeedMultiplier;
     }
 
     private bool MovePermissionDetour(
@@ -778,7 +804,7 @@ internal sealed unsafe partial class AdvancedToolsFeature : IDisposable
         Plugin.Chat.Print("[Keita 工具箱] 已取消鼠标位置传送。");
     }
 
-    private void TeleportToFlag()
+    public void TeleportToFlag()
     {
         if (!Plugin.ProtectedFeaturesUnlocked)
             return;

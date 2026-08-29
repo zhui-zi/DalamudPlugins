@@ -47,6 +47,7 @@ public sealed partial class Plugin : IDalamudPlugin
     [PluginService] internal static IToastGui Toasts { get; private set; } = null!;
     [PluginService] internal static INotificationManager Notifications { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
+    [PluginService] internal static INamePlateGui NamePlateGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
     internal static Configuration Config { get; private set; } = null!;
@@ -66,6 +67,8 @@ public sealed partial class Plugin : IDalamudPlugin
     private VoidAetherFeature? voidAetherFeature;
     private AeAssistStartupFeature? aeAssistStartupFeature;
     private VerificationMonitorFeature? verificationMonitorFeature;
+    private FashionReportFeature? fashionReportFeature;
+    private PartyAliasFeature? partyAliasFeature;
     private bool omenServicesInitialized;
     private bool runtimeInitialized;
     private readonly HttpClient unlockClient = new()
@@ -157,6 +160,12 @@ public sealed partial class Plugin : IDalamudPlugin
         verificationMonitorFeature = CreateFeature(
             "plugin verification monitor",
             () => new VerificationMonitorFeature());
+        fashionReportFeature = CreateFeature(
+            "Fashion Report assistant",
+            () => new FashionReportFeature());
+        partyAliasFeature = CreateFeature(
+            "party name aliases",
+            () => new PartyAliasFeature());
 
         Framework.Update += OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw += DrawFloatingButton;
@@ -178,6 +187,8 @@ public sealed partial class Plugin : IDalamudPlugin
         TryCleanup("framework update event", () => Framework.Update -= OnFrameworkUpdate);
 
         DisposeFeature(verificationMonitorFeature, "plugin verification monitor");
+        DisposeFeature(fashionReportFeature, "Fashion Report assistant");
+        DisposeFeature(partyAliasFeature, "party name aliases");
         DisposeFeature(aeAssistStartupFeature, "AEAssist startup automation");
         DisposeFeature(voidAetherFeature, "void aether tools");
         DisposeFeature(occultPotFeature, "Magic Pot Assistant");
@@ -224,6 +235,7 @@ public sealed partial class Plugin : IDalamudPlugin
         {
             Scheduler.Update();
             advancedToolsFeature?.UpdateMouseTeleport();
+            advancedToolsFeature?.UpdatePartyBuffs();
             verificationMonitorFeature?.Update();
             CompleteUsageRequest();
         }
@@ -263,6 +275,15 @@ public sealed partial class Plugin : IDalamudPlugin
                 Chat.PrintError("[Keita 工具箱] 鼠标位置传送当前不可用。");
             else
                 advancedToolsFeature.TeleportToMouse();
+            return;
+        }
+
+        if (trimmed.Equals("flag", StringComparison.OrdinalIgnoreCase))
+        {
+            if (advancedToolsFeature == null)
+                Chat.PrintError("[Keita 工具箱] 地图旗标传送当前不可用。");
+            else
+                advancedToolsFeature.TeleportToFlag();
             return;
         }
 

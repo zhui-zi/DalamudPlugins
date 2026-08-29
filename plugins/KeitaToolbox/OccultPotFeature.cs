@@ -938,8 +938,8 @@ internal sealed partial class OccultPotFeature : IDisposable
                     Plugin.DrawColoredWrapped(KnownColor.Red.ToVector4(),
                         "警告：无法隐藏撒娇罐，可能会引起绿玩惊诧。");
                     Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(),
-                        $"遁地寻宝测试：/ktb {UndergroundTestCommand} [on|off]\n" +
                         "需在新月岛野外、非战斗状态使用；再次执行或使用 off 可安全退出。");
+                    Plugin.DrawCommandHelp($"/ktb {UndergroundTestCommand} [on|off]");
                 }
                 else if (DangerZoneHandling == DangerZoneHandlingMode.Skip)
                     Plugin.DrawColoredWrapped(KnownColor.Gray.ToVector4(),

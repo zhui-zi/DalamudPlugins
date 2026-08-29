@@ -10,7 +10,7 @@ namespace KeitaToolbox;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 6;
+    public int Version { get; set; } = 7;
     public bool DisclaimerAccepted { get; set; }
     public bool ProtectedFeaturesUnlocked { get; set; }
     public string AnonymousInstallId { get; set; } = string.Empty;
@@ -32,6 +32,7 @@ public sealed class Configuration : IPluginConfiguration
     public string OccultPotAssistantConfig { get; set; } = string.Empty;
     public AeAssistStartupSettings AeAssistStartup { get; set; } = new();
     public VerificationMonitorSettings VerificationMonitor { get; set; } = new();
+    public PartyAliasSettings PartyAlias { get; set; } = new();
 
     [NonSerialized]
     private IDalamudPluginInterface? pluginInterface;
@@ -54,11 +55,21 @@ public sealed class Configuration : IPluginConfiguration
         PluginSwitcher = Ensure(PluginSwitcher, ref changed);
         Portrait = Ensure(Portrait, ref changed);
         Advanced = Ensure(Advanced, ref changed);
+        Advanced.DutySpeed = Ensure(Advanced.DutySpeed, ref changed);
+        Advanced.NormalSpeed = Ensure(Advanced.NormalSpeed, ref changed);
+        Advanced.ZoneSpeeds = Ensure(Advanced.ZoneSpeeds, ref changed);
+        Advanced.SelectedStatusOffBuffs = Ensure(
+            Advanced.SelectedStatusOffBuffs,
+            ref changed);
+        Advanced.PartyBuffRemovedMessage = EnsureString(
+            Advanced.PartyBuffRemovedMessage,
+            ref changed);
         CombatUtilities = Ensure(CombatUtilities, ref changed);
         MapGearset = Ensure(MapGearset, ref changed);
         OccultPot = Ensure(OccultPot, ref changed);
         AeAssistStartup = Ensure(AeAssistStartup, ref changed);
         VerificationMonitor = Ensure(VerificationMonitor, ref changed);
+        PartyAlias = Ensure(PartyAlias, ref changed);
 
         AnonymousInstallId = EnsureString(AnonymousInstallId, ref changed);
         OccultPotAssistantConfig = EnsureString(OccultPotAssistantConfig, ref changed);
@@ -81,6 +92,26 @@ public sealed class Configuration : IPluginConfiguration
         VerificationMonitor.LastKnownExpiryUnixSeconds = Ensure(
             VerificationMonitor.LastKnownExpiryUnixSeconds,
             ref changed);
+
+        var aliases = PartyAlias.Aliases ?? [];
+        if (aliases.Length != PartyAliasSettings.SlotCount)
+        {
+            var resized = new string[PartyAliasSettings.SlotCount];
+            Array.Copy(aliases, resized, Math.Min(aliases.Length, resized.Length));
+            aliases = resized;
+            changed = true;
+        }
+        PartyAlias.Aliases = aliases;
+
+        for (var i = 0; i < aliases.Length; i++)
+        {
+            var normalized = PartyAliasSettings.NormalizeAlias(aliases[i]);
+            if (!string.Equals(aliases[i], normalized, StringComparison.Ordinal))
+            {
+                aliases[i] = normalized;
+                changed = true;
+            }
+        }
 
         var mapRuleCount = PluginSwitcher.MapRules.Count;
         PluginSwitcher.MapRules.RemoveAll(static rule => rule == null);
@@ -128,9 +159,9 @@ public sealed class Configuration : IPluginConfiguration
             changed = true;
         }
 
-        if (Version < 6)
+        if (Version < 7)
         {
-            Version = 6;
+            Version = 7;
             changed = true;
         }
 
@@ -164,6 +195,32 @@ public sealed class InterfaceSettings
 }
 
 [Serializable]
+public sealed class PartyAliasSettings
+{
+    public const int SlotCount = 8;
+
+    public bool Enabled { get; set; } = true;
+    public string[] Aliases { get; set; } = new string[SlotCount];
+
+    public string GetAlias(int slot) =>
+        slot is >= 0 and < SlotCount ? Aliases[slot] ?? string.Empty : string.Empty;
+
+    public void SetAlias(int slot, string alias)
+    {
+        if (slot is >= 0 and < SlotCount)
+            Aliases[slot] = NormalizeAlias(alias);
+    }
+
+    public void ClearAliases() => Array.Fill(Aliases, string.Empty);
+
+    internal static string NormalizeAlias(string? alias)
+    {
+        var normalized = alias?.Trim() ?? string.Empty;
+        return normalized.Length > 32 ? normalized[..32] : normalized;
+    }
+}
+
+[Serializable]
 public sealed class FeatureSwitches
 {
     public bool AnnounceRecruitmentOnClear { get; set; }
@@ -182,6 +239,7 @@ public sealed class FeatureSwitches
     public bool FrontlineRemoteInteraction { get; set; }
     public bool MapGearsetSwitch { get; set; }
     public bool OccultPotAutoRevive { get; set; }
+    public bool FashionReportAssistant { get; set; } = true;
 }
 
 [Serializable]
@@ -265,7 +323,14 @@ public sealed class PortraitSettings
 public sealed class AdvancedToolsSettings
 {
     public bool SpeedHack { get; set; }
-    public float SpeedValue { get; set; } = 0.17f;
+    public SpeedRuleSettings DutySpeed { get; set; } = new() { WithPlayers = -1f };
+    public SpeedRuleSettings NormalSpeed { get; set; } = new();
+    public Dictionary<uint, SpeedRuleSettings> ZoneSpeeds { get; set; } = [];
+    public bool RemoveOtherPlayerBuffs { get; set; }
+    public bool DetectPartyBuffs { get; set; }
+    public string PartyBuffRemovedMessage { get; set; } =
+        "“{姓名}”坏宝宝“点掉了{团辅名}”";
+    public HashSet<string> SelectedStatusOffBuffs { get; set; } = [];
     public bool MovePermission { get; set; }
     public bool SkillPostActionMove { get; set; }
     public bool ActionRange { get; set; }
@@ -285,6 +350,23 @@ public sealed class AdvancedToolsSettings
     public float ZOffsetValue { get; set; }
     public bool DeepDungeonZOffsetMode { get; set; }
     public bool DebugLogging { get; set; }
+}
+
+[Serializable]
+public sealed class SpeedRuleSettings
+{
+    public float InCombat { get; set; } = 1.12f;
+    public float WithPlayers { get; set; } = 1f;
+    public float Normal { get; set; } = 1f;
+
+    public float Select(bool inCombat, bool playersAround)
+    {
+        if (InCombat > 0f && inCombat)
+            return InCombat;
+        if (WithPlayers > 0f && playersAround)
+            return WithPlayers;
+        return Normal > 0f ? Normal : 1f;
+    }
 }
 
 [Serializable]

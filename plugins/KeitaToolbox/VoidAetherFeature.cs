@@ -88,6 +88,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
             ImGui.SetTooltip("打开虚空传唤铃");
 
         Plugin.DrawHelp("通过游戏事件打开装备维护与雇员服务。");
+        Plugin.DrawCommandHelp("/ktb repair", "/ktb bell");
     }
 
     public void DrawPartyAndTradeSettings()
@@ -107,6 +108,7 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
             ImGui.SetTooltip("无视等级限制打开当前地图的4级双色宝石商店");
 
         Plugin.DrawHelp("通过游戏事件打开储物与商店服务。");
+        Plugin.DrawCommandHelp("/ktb chest", "/ktb bicolor");
     }
 
     public void DrawMovementAndSystemSettings()
@@ -128,12 +130,36 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
         var parts = arguments.Split(
             ' ',
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length == 0 ||
-            (!parts[0].Equals("bf", StringComparison.OrdinalIgnoreCase) &&
-             !parts[0].Equals("battlefield", StringComparison.OrdinalIgnoreCase)))
-        {
+        if (parts.Length == 0)
             return false;
+
+        if (parts[0].Equals("repair", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenRepair();
+            return true;
         }
+
+        if (parts[0].Equals("bell", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenSummoningBell();
+            return true;
+        }
+
+        if (parts[0].Equals("chest", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenCompanyChest();
+            return true;
+        }
+
+        if (parts[0].Equals("bicolor", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenBicolorShop();
+            return true;
+        }
+
+        if (!parts[0].Equals("bf", StringComparison.OrdinalIgnoreCase) &&
+            !parts[0].Equals("battlefield", StringComparison.OrdinalIgnoreCase))
+            return false;
 
         if (parts.Length == 1)
         {
@@ -255,7 +281,8 @@ internal sealed unsafe class VoidAetherFeature : IDisposable
             if (ImGui.Button("独立窗口##OpenBattlefieldWindow"))
                 battlefieldWindowOpen = true;
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("打开独立的 PVP 窗口 命令: /ktb bf");
+                ImGui.SetTooltip("打开独立的 PVP 窗口");
+            Plugin.DrawCommandHelp("/ktb bf");
         }
 
         ImGui.Spacing();

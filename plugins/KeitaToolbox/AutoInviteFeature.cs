@@ -247,8 +247,7 @@ internal sealed unsafe class AutoInviteFeature : IDisposable
             Plugin.Config.AutoInvite.RuntimeEnabled = runtimeEnabled;
             Plugin.Config.Save();
         }
-        ImGui.SameLine();
-        Plugin.DrawDisabledWrapped("/ktb autoinvite on|off|toggle");
+        Plugin.DrawCommandHelp("/ktb autoinvite on|off|toggle");
 
         var pattern = Plugin.Config.AutoInvite.TextPattern;
         if (ImGui.InputText("消息匹配表达式", ref pattern, 256))
