@@ -2,7 +2,7 @@
   "Author": "keita",
   "Name": "FFLogs 日志上传器",
   "InternalName": "FFLogsPlugin",
-  "AssemblyVersion": "1.3.0.0",
+  "AssemblyVersion": "1.3.0.1",
   "Description": "在游戏内上传 ACT 战斗日志，支持实时记录和手动上传。默认连接 CN FFLogs。",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/zhui-zi/DalamudPlugins",
