@@ -20,9 +20,9 @@
     "IsTestingExclusive": false,
     "DownloadCount": 0,
     "LastUpdate": 1789259227,
-    "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/FFLogsPlugin/latest.zip",
-    "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/FFLogsPlugin/latest.zip",
-    "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/FFLogsPlugin/latest.zip"
+    "DownloadLinkInstall": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/FFLogsPlugin/latest.zip?v=1.3.0.1",
+    "DownloadLinkTesting": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/FFLogsPlugin/latest.zip?v=1.3.0.1",
+    "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/FFLogsPlugin/latest.zip?v=1.3.0.1"
   },
   {
     "Author": "zhui-zi",
@@ -57,5 +57,6 @@
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/zhui-zi/DalamudPlugins/main/plugins/KeitaToolbox/latest.zip"
   }
 ]
+
 
 
