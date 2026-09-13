@@ -1,0 +1,175 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "FFLogsPlugin/1.3.0.0": {
+        "dependencies": {
+          "Microsoft.ClearScript.V8": "7.5.0",
+          "Microsoft.ClearScript.V8.Native.linux-x64": "7.5.0",
+          "Microsoft.ClearScript.V8.Native.osx-arm64": "7.5.0",
+          "Microsoft.ClearScript.V8.Native.osx-x64": "7.5.0",
+          "Microsoft.ClearScript.V8.Native.win-x64": "7.5.0",
+          "System.Security.Cryptography.ProtectedData": "9.0.2"
+        },
+        "runtime": {
+          "FFLogsPlugin.dll": {}
+        }
+      },
+      "Microsoft.ClearScript.Core/7.5.0": {
+        "runtime": {
+          "lib/net5.0/ClearScript.Core.dll": {
+            "assemblyVersion": "7.5.0.0",
+            "fileVersion": "7.5.0.0"
+          }
+        }
+      },
+      "Microsoft.ClearScript.V8/7.5.0": {
+        "dependencies": {
+          "Microsoft.ClearScript.Core": "7.5.0",
+          "Microsoft.ClearScript.V8.ICUData": "7.5.0",
+          "Newtonsoft.Json": "13.0.3"
+        },
+        "runtime": {
+          "lib/net5.0/ClearScript.V8.dll": {
+            "assemblyVersion": "7.5.0.0",
+            "fileVersion": "7.5.0.0"
+          }
+        }
+      },
+      "Microsoft.ClearScript.V8.ICUData/7.5.0": {
+        "runtime": {
+          "lib/netstandard1.0/ClearScript.V8.ICUData.dll": {
+            "assemblyVersion": "7.5.0.0",
+            "fileVersion": "7.5.0.0"
+          }
+        }
+      },
+      "Microsoft.ClearScript.V8.Native.linux-x64/7.5.0": {
+        "runtimeTargets": {
+          "runtimes/linux-x64/native/ClearScriptV8.linux-x64.so": {
+            "rid": "linux-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "Microsoft.ClearScript.V8.Native.osx-arm64/7.5.0": {
+        "runtimeTargets": {
+          "runtimes/osx-arm64/native/ClearScriptV8.osx-arm64.dylib": {
+            "rid": "osx-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "Microsoft.ClearScript.V8.Native.osx-x64/7.5.0": {
+        "runtimeTargets": {
+          "runtimes/osx-x64/native/ClearScriptV8.osx-x64.dylib": {
+            "rid": "osx-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "Microsoft.ClearScript.V8.Native.win-x64/7.5.0": {
+        "runtimeTargets": {
+          "runtimes/win-x64/native/ClearScriptV8.win-x64.dll": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "7.5.0.0"
+          }
+        }
+      },
+      "Newtonsoft.Json/13.0.3": {
+        "runtime": {
+          "lib/net6.0/Newtonsoft.Json.dll": {
+            "assemblyVersion": "13.0.0.0",
+            "fileVersion": "13.0.3.27908"
+          }
+        }
+      },
+      "System.Security.Cryptography.ProtectedData/9.0.2": {
+        "runtime": {
+          "lib/net9.0/System.Security.Cryptography.ProtectedData.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.225.6610"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "FFLogsPlugin/1.3.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.ClearScript.Core/7.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-7BfzQZA7LdgpfJGSy/GBzKuURb32UpJGQObH5WAavkUxS/u9h/KaEl8N4812F6f4UWVrtwI5XdRgLMu6ukt38A==",
+      "path": "microsoft.clearscript.core/7.5.0",
+      "hashPath": "microsoft.clearscript.core.7.5.0.nupkg.sha512"
+    },
+    "Microsoft.ClearScript.V8/7.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-k2xS9o6Oz57xx24nVhOqrkmJN/sDdkYTwdfmu2XS5KpnmAyqeVJBCfc9Wh83UvKUYb7lQBHSCk7gk2hLyJoG4Q==",
+      "path": "microsoft.clearscript.v8/7.5.0",
+      "hashPath": "microsoft.clearscript.v8.7.5.0.nupkg.sha512"
+    },
+    "Microsoft.ClearScript.V8.ICUData/7.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-brX7rIjvZPt/ZDSZOPf36ULxhlsFcEgg2WLeOXCFkexTH7MWgUGy//6vMry/QvTLhSgDrs5z+8SbEU1krnuxRg==",
+      "path": "microsoft.clearscript.v8.icudata/7.5.0",
+      "hashPath": "microsoft.clearscript.v8.icudata.7.5.0.nupkg.sha512"
+    },
+    "Microsoft.ClearScript.V8.Native.linux-x64/7.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-snoN9oRwKqShA32IsuCanLjNtP8hros2WOrOBL7g+ED3AV40qwrsbfKwWq37BzogrfsF1aEVoDkBpE19Az7DVQ==",
+      "path": "microsoft.clearscript.v8.native.linux-x64/7.5.0",
+      "hashPath": "microsoft.clearscript.v8.native.linux-x64.7.5.0.nupkg.sha512"
+    },
+    "Microsoft.ClearScript.V8.Native.osx-arm64/7.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-CkMgeX0I0+bXUzoaVoJdV86/k0H2PEukqCoZ8zQ28msB6YHeRX6FJTfvOQ0l6UTX5HaBHGG3CWUI04uBYe6M+A==",
+      "path": "microsoft.clearscript.v8.native.osx-arm64/7.5.0",
+      "hashPath": "microsoft.clearscript.v8.native.osx-arm64.7.5.0.nupkg.sha512"
+    },
+    "Microsoft.ClearScript.V8.Native.osx-x64/7.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-yXoXLWKJJgW5V6ez1aMa+ZS2nCef0X4iTYzPS9bTSYl9y7D4R2Ie2KrfR8nLO2rhOKimIMx3MH49Zh1CYruN/g==",
+      "path": "microsoft.clearscript.v8.native.osx-x64/7.5.0",
+      "hashPath": "microsoft.clearscript.v8.native.osx-x64.7.5.0.nupkg.sha512"
+    },
+    "Microsoft.ClearScript.V8.Native.win-x64/7.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-DKMxDLboTNflYkwDQ/ELrSf1vXTpew5UZ8xzrXSVKYFBU570VA6NKh1etEGhufuCuDyU7Je5L2g6H+19Dbl+tA==",
+      "path": "microsoft.clearscript.v8.native.win-x64/7.5.0",
+      "hashPath": "microsoft.clearscript.v8.native.win-x64.7.5.0.nupkg.sha512"
+    },
+    "Newtonsoft.Json/13.0.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ==",
+      "path": "newtonsoft.json/13.0.3",
+      "hashPath": "newtonsoft.json.13.0.3.nupkg.sha512"
+    },
+    "System.Security.Cryptography.ProtectedData/9.0.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-+z9JWtU9di45tW/w6zpuJms4SnAAqKY2Usmmxs7MpOhxWoIeR2pKl1vEkaFbEx52ZfrMFcZXsFe+8WERMozzGg==",
+      "path": "system.security.cryptography.protecteddata/9.0.2",
+      "hashPath": "system.security.cryptography.protecteddata.9.0.2.nupkg.sha512"
+    }
+  }
+}
